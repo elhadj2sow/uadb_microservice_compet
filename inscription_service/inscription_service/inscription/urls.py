@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     PreinscriptionView,
+    AutoCreateInscriptionView,
     MonInscriptionView,
     MesInscriptionsView,
     InscriptionListView,
@@ -19,6 +20,11 @@ urlpatterns = [
         'inscriptions/',
         PreinscriptionView.as_view(),
         name='preinscription'
+    ),
+    path(
+        'inscriptions/auto-create/',
+        AutoCreateInscriptionView.as_view(),
+        name='auto-create-inscription'
     ),
     path(
         'inscriptions/mon-inscription/',

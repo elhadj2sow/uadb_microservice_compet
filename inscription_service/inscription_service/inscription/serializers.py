@@ -154,7 +154,12 @@ class ValiderEtapeSerializer(serializers.Serializer):
 
 
 class PaiementCreateSerializer(serializers.Serializer):
-    montant             = serializers.DecimalField(max_digits=10, decimal_places=2)
+    montant             = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
     montant_paye        = serializers.DecimalField(max_digits=10, decimal_places=2)
     mode_paiement       = serializers.ChoiceField(choices=[
         'especes', 'virement', 'orange_money', 'wave', 'cheque'

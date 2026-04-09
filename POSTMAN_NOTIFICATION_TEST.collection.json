@@ -1,0 +1,200 @@
+{
+  "info": {
+    "_postman_id": "b7d5d5e3-8e0c-4cb1-8b52-9c7b7f0dd101",
+    "name": "UADB - Notification Test",
+    "description": "Collection Postman pour tester le service notification UADB.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login étudiant",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.environment.set('student_access_token', body.access);",
+              "  if (body.refresh) { pm.environment.set('student_refresh_token', body.refresh); }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{student_username}}\",\n  \"password\": \"{{student_password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{auth_base_url}}/api/auth/login/",
+          "host": [
+            "{{auth_base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Auth - Login service notification",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.environment.set('service_notification_access_token', body.access);",
+              "  if (body.refresh) { pm.environment.set('service_notification_refresh_token', body.refresh); }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{service_notification_username}}\",\n  \"password\": \"{{service_notification_password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{auth_base_url}}/api/auth/login/",
+          "host": [
+            "{{auth_base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification - Envoyer une notification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{service_notification_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"etudiant_id\": 10,\n  \"canal\": \"email\",\n  \"type_notification\": \"systeme\",\n  \"message\": \"Test notification depuis Postman.\",\n  \"emetteur_service\": \"postman_test\"\n}"
+        },
+        "url": {
+          "raw": "{{notification_base_url}}/api/notifications/",
+          "host": [
+            "{{notification_base_url}}"
+          ],
+          "path": [
+            "api",
+            "notifications",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification - Mes notifications",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{student_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{notification_base_url}}/api/notifications/mes-notifications/",
+          "host": [
+            "{{notification_base_url}}"
+          ],
+          "path": [
+            "api",
+            "notifications",
+            "mes-notifications",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification - Relancer les échecs",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{service_notification_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{notification_base_url}}/api/notifications/admin/relancer/",
+          "host": [
+            "{{notification_base_url}}"
+          ],
+          "path": [
+            "api",
+            "notifications",
+            "admin",
+            "relancer",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "Notification - Statistiques",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{service_notification_access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{notification_base_url}}/api/notifications/statistiques/",
+          "host": [
+            "{{notification_base_url}}"
+          ],
+          "path": [
+            "api",
+            "notifications",
+            "statistiques",
+            ""
+          ]
+        }
+      }
+    }
+  ]
+}

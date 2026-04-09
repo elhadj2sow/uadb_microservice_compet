@@ -32,6 +32,14 @@ ROLE_SERVICE_MAP = {
     'bibliotheque'    : 'bibliotheque',
 }
 
+FRAIS_PAR_NIVEAU = {
+    'L1': 25000,
+    'L2': 25000,
+    'L3': 25000,
+    'M1': 50000,
+    'M2': 50000,
+}
+
 
 def get_internal_token():
     try:
@@ -51,6 +59,34 @@ def get_internal_token():
 def auth_header():
     token = get_internal_token()
     return {'Authorization': f'Bearer {token}'} if token else {}
+
+
+def _get_formation(formation_id):
+    """Récupère les informations de formation depuis dossier_service."""
+    try:
+        res = requests.get(
+            f"{settings.SERVICE_DOSSIER}/api/formations/{formation_id}/",
+            headers=auth_header(),
+            timeout=5
+        )
+        if res.status_code != 200:
+            return None
+        return res.json()
+    except Exception:
+        return None
+
+
+def _montant_attendu_inscription(inscription):
+    """Calcule les frais d'inscription selon le niveau de la formation."""
+    formation = _get_formation(inscription.formation_id)
+    if not formation:
+        return None
+
+    niveau = formation.get('niveau')
+    if niveau not in FRAIS_PAR_NIVEAU:
+        return None
+
+    return FRAIS_PAR_NIVEAU[niveau]
 
 
 # ─────────────────────────────────────────────
@@ -77,7 +113,7 @@ class PreinscriptionView(APIView):
             )
 
         # Vérifier complétude du dossier via service IA
-        eligible, motif = self._verifier_dossier(request)
+        eligible, motif, dossier_id = self._verifier_dossier(request)
         if not eligible:
             return Response(
                 {'error': f"Dossier incomplet : {motif}"},
@@ -85,9 +121,11 @@ class PreinscriptionView(APIView):
             )
 
         # Créer l'inscription → signal demarrer_workflow déclenché
-        inscription = serializer.save(
-            etudiant_id=request.user.etudiant_id
-        )
+        save_kwargs = {'etudiant_id': request.user.etudiant_id}
+        if dossier_id:
+            save_kwargs['dossier_id'] = dossier_id
+
+        inscription = serializer.save(**save_kwargs)
 
         return Response(
             InscriptionSerializer(inscription).data,
@@ -121,11 +159,79 @@ class PreinscriptionView(APIView):
                 timeout=5
             )
             data = res_ia.json()
-            return data.get('eligible', False), data.get('motif', '')
+            return (
+                data.get('eligible', False),
+                data.get('motif', ''),
+                dossier_id,
+            )
         except Exception as e:
             logger.warning(f"Vérification dossier ignorée : {e}")
             # En cas d'erreur réseau, on laisse passer
-            return True, ''
+            return True, '', None
+
+
+class AutoCreateInscriptionView(APIView):
+    """
+    POST /api/inscriptions/auto-create/
+    Endpoint interne pour créer automatiquement une inscription
+    à partir d'un dossier validé.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        roles = getattr(request.user, 'roles', [])
+        username = getattr(request.user, 'username', '')
+        if 'admin' not in roles and not username.startswith('service_'):
+            return Response(
+                {'error': 'Accès réservé aux services internes.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        etudiant_id = request.data.get('etudiant_id')
+        formation_id = request.data.get('formation_id')
+        annee = request.data.get('annee_universitaire')
+        type_inscription = request.data.get('type_inscription', 'premiere')
+        dossier_id = request.data.get('dossier_id')
+
+        if not etudiant_id or not formation_id or not annee:
+            return Response(
+                {
+                    'error': (
+                        'etudiant_id, formation_id et '
+                        'annee_universitaire sont obligatoires.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        existante = Inscription.objects.filter(
+            etudiant_id=etudiant_id,
+            annee_universitaire=annee
+        ).first()
+        if existante:
+            return Response(
+                {
+                    'message': 'Inscription déjà existante pour cette année.',
+                    'inscription': InscriptionSerializer(existante).data,
+                },
+                status=status.HTTP_200_OK
+            )
+
+        inscription = Inscription.objects.create(
+            etudiant_id=etudiant_id,
+            formation_id=formation_id,
+            annee_universitaire=annee,
+            type_inscription=type_inscription,
+            dossier_id=dossier_id,
+        )
+
+        return Response(
+            {
+                'message': 'Inscription créée automatiquement.',
+                'inscription': InscriptionSerializer(inscription).data,
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 
 class MonInscriptionView(APIView):
@@ -451,10 +557,24 @@ class PaiementView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        montant_attendu = _montant_attendu_inscription(inscription)
+        if montant_attendu is None:
+            return Response(
+                {
+                    'error': (
+                        "Impossible de déterminer le montant d'inscription "
+                        "pour cette formation."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
         paiement, created = Paiement.objects.get_or_create(
             inscription=inscription,
-            defaults={'montant': serializer.validated_data['montant_paye']}
+            defaults={'montant': montant_attendu}
         )
+
+        paiement.montant = montant_attendu
 
         if not created and paiement.statut_paiement == 'confirme':
             return Response(
@@ -476,6 +596,7 @@ class PaiementView(APIView):
 
         return Response({
             'message' : 'Preuve de paiement soumise. En attente de validation comptable.',
+            'montant_attendu': f"{montant_attendu:.2f}",
             'paiement': PaiementSerializer(paiement).data,
         }, status=status.HTTP_201_CREATED)
 
@@ -496,11 +617,23 @@ class PaiementView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        montant_attendu = _montant_attendu_inscription(inscription)
+        if montant_attendu is None:
+            return Response(
+                {
+                    'error': (
+                        "Impossible de déterminer le montant d'inscription "
+                        "pour cette formation."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
         paiement, _ = Paiement.objects.get_or_create(
             inscription=inscription,
-            defaults={'montant': serializer.validated_data['montant']}
+            defaults={'montant': montant_attendu}
         )
-        paiement.montant           = serializer.validated_data['montant']
+        paiement.montant           = montant_attendu
         paiement.montant_paye      = serializer.validated_data['montant_paye']
         paiement.mode_paiement     = serializer.validated_data['mode_paiement']
         paiement.reference_paiement = serializer.validated_data.get(

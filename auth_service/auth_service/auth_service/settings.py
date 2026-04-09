@@ -88,6 +88,8 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME'   : timedelta(days=7),
     'ROTATE_REFRESH_TOKENS'    : True,
     'BLACKLIST_AFTER_ROTATION' : True,
+    'ALGORITHM'                : 'HS256',
+    'SIGNING_KEY'              : config('JWT_SIGNING_KEY', default=SECRET_KEY),
     'AUTH_HEADER_TYPES'        : ('Bearer',),
     'USER_ID_FIELD'            : 'id',
     'USER_ID_CLAIM'            : 'user_id',

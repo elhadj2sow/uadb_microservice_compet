@@ -116,6 +116,7 @@ python manage.py runserver 8002
 | Méthode | URL | Rôle requis | Description |
 |---------|-----|-------------|-------------|
 | POST | `/api/inscriptions/` | etudiant | Soumettre une préinscription |
+| POST | `/api/inscriptions/auto-create/` | interne (service dossier) | Créer automatiquement une inscription depuis un dossier validé |
 | GET | `/api/inscriptions/mon-inscription/` | etudiant | Consulter son inscription |
 | GET | `/api/inscriptions/mes-inscriptions/` | etudiant | Historique des inscriptions |
 | GET | `/api/inscriptions/liste/` | agent_scolarite, admin | Lister toutes les inscriptions |
@@ -183,6 +184,8 @@ curl -X PATCH http://localhost:8002/api/inscriptions/1/valider-etape/ \
 
 ### 3. Soumettre un paiement (étudiant)
 
+Le montant dû est calculé automatiquement selon le niveau de la formation.
+
 ```bash
 curl -X POST http://localhost:8002/api/inscriptions/1/paiement/ \
   -H "Authorization: Bearer <token_etudiant>" \
@@ -196,12 +199,14 @@ curl -X POST http://localhost:8002/api/inscriptions/1/paiement/ \
 
 ### 4. Confirmer le paiement (agent comptable)
 
+Le champ `montant` n'est plus piloté par le body : il est fixé automatiquement
+par le service selon le niveau de la formation.
+
 ```bash
 curl -X PATCH http://localhost:8002/api/inscriptions/1/paiement/ \
   -H "Authorization: Bearer <token_agent_comptable>" \
   -H "Content-Type: application/json" \
   -d '{
-    "montant": 50000,
     "montant_paye": 50000,
     "mode_paiement": "orange_money",
     "reference_paiement": "OM-2025-789456"
@@ -214,6 +219,21 @@ curl -X PATCH http://localhost:8002/api/inscriptions/1/paiement/ \
 curl -X GET "http://localhost:8002/api/inscriptions/mon-inscription/?annee=2024-2025" \
   -H "Authorization: Bearer <token_etudiant>"
 ```
+
+---
+
+## Tarification des frais d'inscription
+
+Le montant est déterminé automatiquement à partir du `niveau` de la formation
+(référentiel du `dossier_service`) :
+
+| Niveau | Frais |
+|--------|-------|
+| `L1`, `L2`, `L3` | `25000 FCFA` |
+| `M1`, `M2` | `50000 FCFA` |
+
+Si la formation est indisponible ou son niveau non reconnu, le service renvoie
+une erreur (`503`) au moment du paiement.
 
 ---
 
@@ -248,6 +268,13 @@ Le token JWT doit contenir le champ `roles` avec les valeurs suivantes :
 
 Le circuit de validation fonctionne entièrement via les **signaux Django**.
 Aucune intervention manuelle n'est nécessaire pour faire avancer le circuit.
+
+### Création d'inscription depuis dossier validé
+
+Quand un dossier passe à l'état `valide` dans `dossier_service`,
+`inscription_service` crée automatiquement l'inscription (même étudiant,
+même formation, même année universitaire). L'opération est idempotente :
+si une inscription existe déjà pour l'année, elle est réutilisée.
 
 ```
 Étudiant soumet préinscription

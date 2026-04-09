@@ -83,6 +83,8 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME' : timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ALGORITHM'             : 'HS256',
+    'SIGNING_KEY'           : config('JWT_SIGNING_KEY', default=SECRET_KEY),
     'AUTH_HEADER_TYPES'     : ('Bearer',),
     'USER_ID_FIELD'         : 'id',
     'USER_ID_CLAIM'         : 'user_id',

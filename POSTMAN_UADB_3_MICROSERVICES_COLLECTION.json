@@ -1,0 +1,497 @@
+{
+  "info": {
+    "_postman_id": "b9f1f95d-5c2e-4f6c-8d6a-61f0a03f7c91",
+    "name": "UADB - 3 Microservices Complete Flow",
+    "description": "Collection complete pour tester auth_service (8001), inscription_service (8002) et dossier_service (8003).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "AUTH_URL", "value": "http://localhost:8001" },
+    { "key": "INSC_URL", "value": "http://localhost:8002" },
+    { "key": "DOSSIER_URL", "value": "http://localhost:8003" },
+
+    { "key": "student_username", "value": "etudiant_api_01" },
+    { "key": "student_email", "value": "etudiant_api_01@uadb.sn" },
+    { "key": "student_password", "value": "TestPass123!" },
+
+    { "key": "token_etudiant", "value": "" },
+    { "key": "token_scolarite", "value": "" },
+    { "key": "token_comptable", "value": "" },
+    { "key": "token_medical", "value": "" },
+    { "key": "token_biblio", "value": "" },
+
+    { "key": "formation_id", "value": "2" },
+    { "key": "annee_universitaire", "value": "2026-2027" },
+
+    { "key": "dossier_id", "value": "" },
+    { "key": "piece_id", "value": "" },
+    { "key": "inscription_id", "value": "" },
+
+    { "key": "piece_type", "value": "bac" },
+    { "key": "paiement_reference", "value": "WAVE-2026-0001" }
+  ],
+  "item": [
+    {
+      "name": "0 - Health Check",
+      "item": [
+        {
+          "name": "Auth Login Ping",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{student_username}}\",\n  \"password\": \"{{student_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Dossier Formations Ping",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{DOSSIER_URL}}/api/formations/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 - Auth Service (Register/Login)",
+      "item": [
+        {
+          "name": "Register Etudiant",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{student_username}}\",\n  \"email\": \"{{student_email}}\",\n  \"password\": \"{{student_password}}\",\n  \"password_confirm\": \"{{student_password}}\",\n  \"nom\": \"Diallo\",\n  \"prenom\": \"Aissatou\",\n  \"date_naissance\": \"2001-05-12\",\n  \"lieu_naissance\": \"Dakar\",\n  \"sexe\": \"F\",\n  \"telephone\": \"770000001\",\n  \"ine\": \"INE20260001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/register/"
+          }
+        },
+        {
+          "name": "Login Etudiant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "if (json.access) pm.collectionVariables.set('token_etudiant', json.access);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{student_username}}\",\n  \"password\": \"{{student_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Login Agent Scolarite",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access) pm.collectionVariables.set('token_scolarite', json.access);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"agent_scolarite1\",\n  \"password\": \"agent_scolarite1_pass\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Login Agent Comptable",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access) pm.collectionVariables.set('token_comptable', json.access);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"agent_comptable1\",\n  \"password\": \"agent_comptable1_pass\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Login Service Medical",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access) pm.collectionVariables.set('token_medical', json.access);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"service_medical1\",\n  \"password\": \"service_medical1_pass\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Login Bibliotheque",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access) pm.collectionVariables.set('token_biblio', json.access);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"bibliotheque1\",\n  \"password\": \"bibliotheque1_pass\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{AUTH_URL}}/api/auth/login/"
+          }
+        },
+        {
+          "name": "Me (Etudiant)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{AUTH_URL}}/api/auth/me/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - Dossier Service",
+      "item": [
+        {
+          "name": "Lister Formations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{DOSSIER_URL}}/api/formations/"
+          }
+        },
+        {
+          "name": "Creer Dossier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 or 400 (already exists)', function () { pm.expect([201,400]).to.include(pm.response.code); });",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set('dossier_id', String(json.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formation\": {{formation_id}},\n  \"annee_universitaire\": \"{{annee_universitaire}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{DOSSIER_URL}}/api/dossiers/"
+          }
+        },
+        {
+          "name": "Mon Dossier",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{DOSSIER_URL}}/api/dossiers/mon-dossier/?annee={{annee_universitaire}}"
+          }
+        },
+        {
+          "name": "Deposer Piece (form-data)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set('piece_id', String(json.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "type_piece", "value": "{{piece_type}}", "type": "text" },
+                { "key": "fichier", "type": "file", "src": "" },
+                { "key": "est_obligatoire", "value": "true", "type": "text" }
+              ]
+            },
+            "url": "{{DOSSIER_URL}}/api/dossiers/{{dossier_id}}/pieces/"
+          }
+        },
+        {
+          "name": "Verifier Piece (Agent Scolarite)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_scolarite}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"valider\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{DOSSIER_URL}}/api/pieces/{{piece_id}}/verifier/"
+          }
+        },
+        {
+          "name": "Valider Dossier (Agent Scolarite)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_scolarite}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"etat_dossier\": \"valide\",\n  \"observation\": \"Dossier administratif valide\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{DOSSIER_URL}}/api/dossiers/{{dossier_id}}/"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Inscription Service",
+      "item": [
+        {
+          "name": "Preinscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 or 400 (already exists)', function () { pm.expect([201,400]).to.include(pm.response.code); });",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set('inscription_id', String(json.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formation_id\": {{formation_id}},\n  \"annee_universitaire\": \"{{annee_universitaire}}\",\n  \"type_inscription\": \"nouvelle\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/"
+          }
+        },
+        {
+          "name": "Mon Inscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{INSC_URL}}/api/inscriptions/mon-inscription/?annee={{annee_universitaire}}"
+          }
+        },
+        {
+          "name": "Soumettre Paiement (Etudiant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montant_paye\": 25000,\n  \"mode_paiement\": \"wave\",\n  \"reference_paiement\": \"{{paiement_reference}}\",\n  \"recu_path\": \"recu_wave_2026_0001.pdf\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/paiement/"
+          }
+        },
+        {
+          "name": "Valider Etape Scolarite",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_scolarite}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"valider\",\n  \"observation\": \"Scolarite OK\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/valider-etape/"
+          }
+        },
+        {
+          "name": "Confirmer Paiement (Comptable)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_comptable}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"montant\": 25000,\n  \"montant_paye\": 25000,\n  \"mode_paiement\": \"wave\",\n  \"reference_paiement\": \"{{paiement_reference}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/paiement/"
+          }
+        },
+        {
+          "name": "Valider Etape Comptabilite",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_comptable}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"valider\",\n  \"observation\": \"Paiement confirme\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/valider-etape/"
+          }
+        },
+        {
+          "name": "Valider Etape Medical",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_medical}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"valider\",\n  \"observation\": \"Aptitude medicale OK\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/valider-etape/"
+          }
+        },
+        {
+          "name": "Valider Etape Bibliotheque",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_biblio}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"valider\",\n  \"observation\": \"Quitus bibliotheque OK\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/valider-etape/"
+          }
+        },
+        {
+          "name": "Workflow Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_etudiant}}" }
+            ],
+            "url": "{{INSC_URL}}/api/inscriptions/{{inscription_id}}/workflow/"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -208,12 +208,13 @@ class UtilisateurListSerializer(serializers.ModelSerializer):
     """Version allégée pour les listes."""
     roles    = serializers.StringRelatedField(many=True, read_only=True)
     nom_complet = serializers.SerializerMethodField()
+    etudiant_id = serializers.SerializerMethodField()
 
     class Meta:
         model  = Utilisateur
         fields = [
             'id', 'username', 'email', 'nom_complet',
-            'etat_compte', 'roles', 'date_joined'
+            'etat_compte', 'roles', 'etudiant_id', 'date_joined'
         ]
 
     def get_nom_complet(self, obj):
@@ -221,6 +222,12 @@ class UtilisateurListSerializer(serializers.ModelSerializer):
             return obj.etudiant.nom_complet
         except Exception:
             return f"{obj.first_name} {obj.last_name}".strip()
+
+    def get_etudiant_id(self, obj):
+        try:
+            return obj.etudiant.id
+        except Exception:
+            return None
 
 
 class AssignerRoleSerializer(serializers.Serializer):
