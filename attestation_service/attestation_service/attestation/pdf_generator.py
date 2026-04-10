@@ -46,7 +46,13 @@ def generer_qr_code(code_verification):
     return buf
 
 
-def generer_pdf_attestation(demande, attestation, profil_etudiant=None):
+def generer_pdf_attestation(
+    demande,
+    attestation,
+    profil_etudiant=None,
+    formation_data=None,
+    inscription_data=None,
+):
     """
     Génère le PDF officiel de l'attestation.
     Retourne un buffer BytesIO contenant le PDF.
@@ -98,16 +104,6 @@ def generer_pdf_attestation(demande, attestation, profil_etudiant=None):
             alignment = TA_CENTER,
             textColor = colors.grey,
         )
-        s_bold = ParagraphStyle(
-            'bold',
-            parent     = styles['Normal'],
-            fontSize   = 11,
-            alignment  = TA_JUSTIFY,
-            leading    = 18,
-            fontName   = 'Helvetica-Bold',
-            spaceAfter = 6,
-        )
-
         # ── En-tête institutionnel ────────────────────────
         elements.append(Paragraph(
             "RÉPUBLIQUE DU SÉNÉGAL",
@@ -144,6 +140,10 @@ def generer_pdf_attestation(demande, attestation, profil_etudiant=None):
             f"N° {attestation.numero_ordre}",
             s_ref
         ))
+        elements.append(Paragraph(
+            f"Date d'émission : {timezone.now().strftime('%d/%m/%Y')}",
+            s_ref
+        ))
         elements.append(Spacer(1, 0.8 * cm))
 
         # ── Corps du document ─────────────────────────────
@@ -166,18 +166,77 @@ def generer_pdf_attestation(demande, attestation, profil_etudiant=None):
             prenom = ''
             mat    = 'N/A'
 
-        elements.append(Paragraph(
-            f"M./Mme <b>{prenom} {nom}</b>",
-            s_corps
-        ))
-        elements.append(Paragraph(
-            f"Matricule : <b>{mat}</b>",
-            s_corps
-        ))
+        date_naissance = 'N/A'
+        if profil_etudiant:
+            etudiant_info = profil_etudiant.get('etudiant', {})
+            date_naissance = (
+                etudiant_info.get('date_naissance')
+                or etudiant_info.get('dateNaissance')
+                or 'N/A'
+            )
+
+        filiere = 'N/A'
+        niveau = 'N/A'
+        if formation_data:
+            filiere = (
+                formation_data.get('specialite')
+                or formation_data.get('libelle')
+                or 'N/A'
+            )
+            niveau = formation_data.get('niveau') or 'N/A'
+
+        annee = demande.annee_universitaire or 'N/A'
+        statut_inscription = (
+            (inscription_data or {}).get('statut_inscription', '')
+            .replace('_', ' ')
+            .title()
+            or 'N/A'
+        )
+
+        info_etudiant = [
+            ['Nom complet', f"{prenom} {nom}".strip()],
+            ['Matricule', mat],
+            ['Date naissance', str(date_naissance)],
+        ]
+        table_etudiant = Table(info_etudiant, colWidths=[5 * cm, 9 * cm])
+        table_etudiant.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [
+                colors.HexColor('#eef3f9'),
+                colors.white,
+            ]),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.grey),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(Paragraph('<b>IDENTIFIANT DE L\'ÉTUDIANT</b>', s_corps))
+        elements.append(table_etudiant)
+        elements.append(Spacer(1, 0.35 * cm))
+
+        info_academique = [
+            ['Filière', filiere],
+            ['Niveau', niveau],
+            ['Année universitaire', annee],
+            ['Statut inscription', statut_inscription],
+        ]
+        table_academique = Table(info_academique, colWidths=[5 * cm, 9 * cm])
+        table_academique.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [
+                colors.HexColor('#eef3f9'),
+                colors.white,
+            ]),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.grey),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(Paragraph('<b>IDENTIFICATION ACADÉMIQUE</b>', s_corps))
+        elements.append(table_academique)
+        elements.append(Spacer(1, 0.5 * cm))
 
         # Corps selon le type d'attestation
-        annee = demande.annee_universitaire or 'N/A'
-
         if demande.type_attestation == 'inscription':
             elements.append(Paragraph(
                 f"est régulièrement inscrit(e) à l'Université Alioune Diop "
@@ -294,6 +353,7 @@ def generer_pdf_releve_notes(
     notes_data,
     profil_etudiant=None,
     resultat_data=None,
+    formation_data=None,
 ):
     """
     Génère un relevé de notes détaillé avec tableau des UEs.
@@ -347,6 +407,14 @@ def generer_pdf_releve_notes(
                 textColor=colors.grey
             )
         ))
+        elements.append(Paragraph(
+            f"Date d'émission : {timezone.now().strftime('%d/%m/%Y')}",
+            ParagraphStyle(
+                'ref_date', parent=styles['Normal'],
+                fontSize=9, alignment=TA_CENTER,
+                textColor=colors.grey
+            )
+        ))
         elements.append(Spacer(1, 0.5 * cm))
 
         # Infos étudiant
@@ -358,10 +426,33 @@ def generer_pdf_releve_notes(
             nom = f"Étudiant N°{demande.etudiant_id}"
             mat = 'N/A'
 
+        filiere = 'N/A'
+        niveau = 'N/A'
+        if formation_data:
+            filiere = (
+                formation_data.get('specialite')
+                or formation_data.get('libelle')
+                or 'N/A'
+            )
+            niveau = formation_data.get('niveau') or 'N/A'
+        elif resultat_data:
+            niveau = resultat_data.get('niveau') or 'N/A'
+
+        semestres = sorted({
+            str(n.get('semestre')) for n in (notes_data or []) if n.get('semestre')
+        })
+        semestre_label = (
+            ' + '.join(f"S{s}" for s in semestres)
+            if semestres else 'Annuel'
+        )
+
         info_data = [
             ['Nom et Prénom', nom],
             ['Matricule',     mat],
+            ['Filière',       filiere],
+            ['Niveau',        niveau],
             ['Année univ.',   demande.annee_universitaire or 'N/A'],
+            ['Semestre',      semestre_label],
         ]
         info_table = Table(info_data, colWidths=[5 * cm, 11 * cm])
         info_table.setStyle(TableStyle([

@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
+import unicodedata
 import requests
 import logging
 
@@ -89,6 +90,27 @@ def _montant_attendu_inscription(inscription):
     return FRAIS_PAR_NIVEAU[niveau]
 
 
+def _normaliser_decision(decision):
+    if not decision:
+        return ''
+    value = str(decision).strip().lower()
+    value = ''.join(
+        c for c in unicodedata.normalize('NFKD', value)
+        if not unicodedata.combining(c)
+    )
+    return value
+
+
+def _annee_precedente(annee_universitaire):
+    try:
+        debut, fin = annee_universitaire.split('-')
+        debut_i = int(debut)
+        fin_i = int(fin)
+        return f"{debut_i - 1}-{fin_i - 1}"
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────
 #  ENDPOINTS ÉTUDIANT
 # ─────────────────────────────────────────────
@@ -113,10 +135,30 @@ class PreinscriptionView(APIView):
             )
 
         # Vérifier complétude du dossier via service IA
-        eligible, motif, dossier_id = self._verifier_dossier(request)
+        eligible, motif, dossier_id = self._verifier_dossier(
+            request,
+            serializer.validated_data.get('annee_universitaire')
+        )
         if not eligible:
             return Response(
                 {'error': f"Dossier incomplet : {motif}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Politique de reinscription basée sur la decision de delibération.
+        type_inscription = serializer.validated_data.get(
+            'type_inscription',
+            'premiere'
+        )
+        annee_universitaire = serializer.validated_data.get('annee_universitaire')
+        decision_ok, decision_message = self._verifier_reinscription(
+            request,
+            type_inscription,
+            annee_universitaire,
+        )
+        if not decision_ok:
+            return Response(
+                {'error': decision_message},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -127,22 +169,34 @@ class PreinscriptionView(APIView):
 
         inscription = serializer.save(**save_kwargs)
 
+        payload = InscriptionSerializer(inscription).data
+        if decision_message:
+            payload['message_condition'] = decision_message
+
         return Response(
-            InscriptionSerializer(inscription).data,
+            payload,
             status=status.HTTP_201_CREATED
         )
 
-    def _verifier_dossier(self, request):
+    def _verifier_dossier(self, request, annee_universitaire=None):
         """Appel au service IA pour vérifier complétude du dossier."""
         try:
             # Récupérer le score du dossier
             res_dossier = requests.get(
                 f"{settings.SERVICE_DOSSIER}/api/dossiers/mon-dossier/",
+                params={
+                    'annee': annee_universitaire
+                } if annee_universitaire else None,
                 headers={'Authorization': request.META.get(
                     'HTTP_AUTHORIZATION', ''
                 )},
                 timeout=5
             )
+            if res_dossier.status_code != 200:
+                return False, (
+                    "Aucun dossier trouvé pour l'année universitaire demandée."
+                ), None
+
             score = res_dossier.json().get('score_completude', 0)
             dossier_id = res_dossier.json().get('id', 0)
 
@@ -169,6 +223,77 @@ class PreinscriptionView(APIView):
             # En cas d'erreur réseau, on laisse passer
             return True, '', None
 
+    def _verifier_reinscription(self, request, type_inscription, annee):
+        if type_inscription != 'reinscription':
+            return True, ''
+
+        annee_prec = _annee_precedente(annee)
+        if not annee_prec:
+            return False, (
+                "Année universitaire invalide pour la réinscription. "
+                "Format attendu: YYYY-YYYY"
+            )
+
+        try:
+            res = requests.get(
+                f"{settings.SERVICE_DELIBERATION}/api/resultats/mes-resultats/",
+                headers={
+                    'Authorization': request.META.get('HTTP_AUTHORIZATION', '')
+                },
+                timeout=5
+            )
+            if res.status_code != 200:
+                return False, (
+                    "Impossible de vérifier votre décision de délibération "
+                    "pour la réinscription."
+                )
+
+            resultats = res.json().get('results', [])
+            cibles = [
+                r for r in resultats
+                if r.get('annee_universitaire') == annee_prec
+            ]
+            if not cibles:
+                return False, (
+                    f"Aucun résultat de délibération trouvé pour l'année {annee_prec}. "
+                    "Réinscription impossible pour le moment."
+                )
+
+            cible = sorted(
+                cibles,
+                key=lambda r: (
+                    1 if r.get('statut_deliberation') == 'cloturee' else 0,
+                    r.get('semestre') or 0,
+                ),
+                reverse=True,
+            )[0]
+            decision = _normaliser_decision(cible.get('decision', ''))
+
+            if decision == 'admis':
+                return True, ''
+
+            if decision == 'rattrapage':
+                return True, (
+                    "Réinscription conditionnelle autorisée: décision rattrapage. "
+                    "Validation pédagogique complémentaire requise."
+                )
+
+            if decision in ('ajourne', 'exclu'):
+                return False, (
+                    "Réinscription refusée: décision de délibération "
+                    f"'{cible.get('decision')}'."
+                )
+
+            return False, (
+                "Réinscription impossible: décision de délibération "
+                "non déterminée."
+            )
+        except Exception:
+            return False, (
+                "Erreur de vérification de la décision de délibération. "
+                "Veuillez réessayer plus tard."
+            )
+
 
 class AutoCreateInscriptionView(APIView):
     """
@@ -192,6 +317,18 @@ class AutoCreateInscriptionView(APIView):
         annee = request.data.get('annee_universitaire')
         type_inscription = request.data.get('type_inscription', 'premiere')
         dossier_id = request.data.get('dossier_id')
+
+        if type_inscription == 'reinscription':
+            return Response(
+                {
+                    'error': (
+                        "La réinscription doit être initiée par l'étudiant "
+                        "via l'endpoint de préinscription afin de vérifier "
+                        "la décision de délibération."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if not etudiant_id or not formation_id or not annee:
             return Response(

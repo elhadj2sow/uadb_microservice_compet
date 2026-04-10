@@ -107,6 +107,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # URLs des autres microservices
 SERVICE_AUTH         = config('SERVICE_AUTH',         default='http://localhost:8001')
 SERVICE_DOSSIER      = config('SERVICE_DOSSIER',      default='http://localhost:8003')
+SERVICE_DELIBERATION = config('SERVICE_DELIBERATION', default='http://localhost:8004')
 SERVICE_IA           = config('SERVICE_IA',           default='http://localhost:8007')
 SERVICE_NOTIFICATION = config('SERVICE_NOTIFICATION', default='http://localhost:8006')
 

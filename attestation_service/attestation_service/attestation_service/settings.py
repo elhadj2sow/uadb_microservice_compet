@@ -112,6 +112,7 @@ MINIO_USE_SSL    = config('MINIO_USE_SSL',    default=False, cast=bool)
 
 # ── URLs des autres microservices ─────────────────────────
 SERVICE_AUTH         = config('SERVICE_AUTH',         default='http://localhost:8001')
+SERVICE_DOSSIER      = config('SERVICE_DOSSIER',      default='http://localhost:8003')
 SERVICE_INSCRIPTION  = config('SERVICE_INSCRIPTION',  default='http://localhost:8002')
 SERVICE_DELIBERATION = config('SERVICE_DELIBERATION', default='http://localhost:8004')
 SERVICE_IA           = config('SERVICE_IA',           default='http://localhost:8007')

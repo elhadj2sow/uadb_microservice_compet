@@ -51,7 +51,6 @@ class Inscription(models.Model):
     )
     numero_matricule    = models.CharField(
         max_length=30,
-        unique=True,
         null=True,
         blank=True,
         help_text="Attribué après validation complète"

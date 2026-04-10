@@ -154,6 +154,28 @@ def get_resultat_deliberation(_etudiant_id, annee, authorization_header=None):
         return None
 
 
+def get_formation_detail(formation_id):
+    """
+    Récupère le détail d'une formation depuis le service dossier.
+    Retourne dict ou None.
+    """
+    if not formation_id:
+        return None
+
+    try:
+        res = requests.get(
+            f"{settings.SERVICE_DOSSIER}/api/formations/{formation_id}/",
+            headers=auth_header(),
+            timeout=5,
+        )
+        if res.status_code == 200:
+            return res.json()
+        return None
+    except Exception as e:
+        logger.warning(f"Service dossier indisponible : {e}")
+        return None
+
+
 def get_profil_etudiant(etudiant_id):
     """
     Récupère le profil de l'étudiant depuis le service auth.

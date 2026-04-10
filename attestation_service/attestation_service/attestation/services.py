@@ -13,6 +13,7 @@ from .utils import (
     verifier_eligibilite_ia,
     get_inscription_etudiant,
     get_resultat_deliberation,
+    get_formation_detail,
     get_profil_etudiant,
     notifier_etudiant,
     generer_numero_ordre,
@@ -52,6 +53,9 @@ class AttestationService:
             demande.etudiant_id, annee, authorization_header
         )
         profil        = get_profil_etudiant(demande.etudiant_id)
+        formation     = get_formation_detail(
+            inscription.get('formation_id') if inscription else None
+        )
 
         inscription_validee   = (
             inscription is not None
@@ -129,10 +133,15 @@ class AttestationService:
                 notes_data,
                 profil,
                 deliberation,
+                formation,
             )
         else:
             pdf_buf = generer_pdf_attestation(
-                demande, attestation, profil
+                demande,
+                attestation,
+                profil,
+                formation,
+                inscription,
             )
 
         if not pdf_buf:

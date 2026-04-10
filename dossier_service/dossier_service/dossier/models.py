@@ -85,7 +85,7 @@ class UniteEnseignement(models.Model):
 class DossierEtudiant(models.Model):
     """
     Classe DossierEtudiant du diagramme de classes.
-    Un seul dossier par étudiant (contrainte unique).
+    Un seul dossier par étudiant et par année universitaire.
     Le score_completude est calculé automatiquement.
     """
     ETAT_CHOICES = [
@@ -97,7 +97,6 @@ class DossierEtudiant(models.Model):
     ]
 
     etudiant_id         = models.IntegerField(
-        unique=True,
         help_text="ID de l'étudiant dans le service auth"
     )
     formation           = models.ForeignKey(
@@ -129,6 +128,7 @@ class DossierEtudiant(models.Model):
     class Meta:
         app_label = 'dossier'
         db_table  = 'dossier_etudiant'
+        unique_together = ('etudiant_id', 'annee_universitaire')
         ordering  = ['-date_creation']
 
     def __str__(self):

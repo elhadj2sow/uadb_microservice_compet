@@ -130,6 +130,17 @@ class PreinscriptionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Profil étudiant introuvable dans le token."
             )
+
+        # Empêche une nouvelle inscription "premiere" si un historique existe déjà.
+        type_inscription = data.get('type_inscription', 'premiere')
+        if type_inscription == 'premiere':
+            historique = Inscription.objects.filter(etudiant_id=etudiant_id)
+            if historique.exists():
+                raise serializers.ValidationError(
+                    "Type d'inscription invalide: utilisez 'reinscription' "
+                    "si vous avez déjà une inscription antérieure."
+                )
+
         existe = Inscription.objects.filter(
             etudiant_id         = etudiant_id,
             annee_universitaire = data['annee_universitaire']

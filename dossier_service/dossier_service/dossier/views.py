@@ -52,6 +52,20 @@ def _auth_header():
 
 def _creer_inscription_automatique(dossier):
     """Crée l'inscription via inscription_service à partir d'un dossier validé."""
+    deja_inscrit_historiquement = DossierEtudiant.objects.filter(
+        etudiant_id=dossier.etudiant_id
+    ).exclude(pk=dossier.pk).exists()
+
+    # Pour une réinscription, l'étudiant doit initier la demande manuellement
+    # afin d'appliquer la politique de décision de délibération.
+    if deja_inscrit_historiquement:
+        logger.info(
+            "Auto-création ignorée dossier=%s etudiant=%s (historique détecté)",
+            dossier.id,
+            dossier.etudiant_id,
+        )
+        return
+
     try:
         res = requests.post(
             f"{settings.SERVICE_INSCRIPTION}/api/inscriptions/auto-create/",

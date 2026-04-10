@@ -238,7 +238,19 @@ def finaliser_inscription(wf):
     wf.save()
 
     insc = wf.inscription
-    matricule = f"UADB-{timezone.now().year}-{insc.id:06d}"
+
+    # Un matricule est attribué une seule fois dans la vie de l'étudiant.
+    matricule_existant = (
+        Inscription.objects
+        .filter(etudiant_id=insc.etudiant_id)
+        .exclude(pk=insc.pk)
+        .exclude(numero_matricule__isnull=True)
+        .exclude(numero_matricule='')
+        .order_by('date_inscription', 'id')
+        .values_list('numero_matricule', flat=True)
+        .first()
+    )
+    matricule = matricule_existant or f"UADB-{timezone.now().year}-{insc.id:06d}"
 
     Inscription.objects.filter(pk=insc.pk).update(
         statut_inscription = 'validee',

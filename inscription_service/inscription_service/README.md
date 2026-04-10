@@ -131,6 +131,25 @@ python manage.py runserver 8002
 
 ---
 
+## Politique de réinscription
+
+Le service applique désormais une politique explicite pour `type_inscription = reinscription`
+à partir de la décision de délibération de l'année précédente :
+
+| Décision précédente | Effet |
+|---------------------|-------|
+| `admis` | Réinscription autorisée |
+| `rattrapage` | Réinscription conditionnelle (message de condition renvoyé) |
+| `ajourné` / `exclu` | Réinscription bloquée avec motif explicite |
+
+Notes :
+
+- La réinscription est contrôlée sur `POST /api/inscriptions/` (flux étudiant).
+- Le endpoint interne `POST /api/inscriptions/auto-create/` refuse `type_inscription = reinscription`
+  pour éviter de contourner cette règle.
+
+---
+
 ## Exemples d'appels API
 
 ### 1. Préinscription (étudiant)
