@@ -90,6 +90,7 @@ class Paiement(models.Model):
         ('orange_money', 'Orange Money'),
         ('wave',         'Wave'),
         ('cheque',       'Chèque'),
+        ('paytech',      'PayTech'),
     ]
     STATUT_CHOICES = [
         ('en_attente', 'En attente'),
@@ -137,6 +138,40 @@ class Paiement(models.Model):
         max_length=255,
         blank=True,
         help_text="Chemin MinIO vers le reçu scanné"
+    )
+    provider            = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="Fournisseur de paiement en ligne (ex: paytech)"
+    )
+    transaction_id      = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="ID transaction côté fournisseur"
+    )
+    transaction_token   = models.CharField(
+        max_length=180,
+        blank=True,
+        help_text="Token/session de paiement fournisseur"
+    )
+    payment_url         = models.TextField(
+        blank=True,
+        help_text="URL de redirection de paiement"
+    )
+    statut_externe      = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text="Statut brut renvoyé par le fournisseur"
+    )
+    callback_payload    = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Dernier payload callback du fournisseur"
+    )
+    date_callback       = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date du dernier callback fournisseur"
     )
 
     class Meta:

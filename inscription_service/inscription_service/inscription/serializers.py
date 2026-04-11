@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import json
 from .models import (Inscription, Paiement,
                      ValidationService, Workflow, EtapeWorkflow)
 
@@ -53,7 +54,9 @@ class PaiementSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'montant', 'montant_paye', 'mode_paiement',
             'reference_paiement', 'statut_paiement',
-            'date_paiement', 'date_confirmation', 'recu_path'
+            'date_paiement', 'date_confirmation', 'recu_path',
+            'provider', 'transaction_id', 'transaction_token',
+            'payment_url', 'statut_externe', 'date_callback'
         ]
 
 
@@ -198,3 +201,68 @@ class PaiementSoumissionSerializer(serializers.Serializer):
         required=False,
         allow_blank=True
     )
+
+
+class PayTechInitSerializer(serializers.Serializer):
+    success_url = serializers.URLField(required=False)
+    cancel_url = serializers.URLField(required=False)
+    target_payment = serializers.CharField(required=False, allow_blank=True)
+
+
+class PayTechWebhookSerializer(serializers.Serializer):
+    ref_command = serializers.CharField(required=False, allow_blank=True)
+    reference = serializers.CharField(required=False, allow_blank=True)
+    item_ref = serializers.CharField(required=False, allow_blank=True)
+    custom_field = serializers.CharField(required=False, allow_blank=True)
+    token = serializers.CharField(required=False, allow_blank=True)
+    transaction_id = serializers.CharField(required=False, allow_blank=True)
+    payment_method = serializers.CharField(required=False, allow_blank=True)
+    amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+    )
+    status = serializers.CharField(required=False, allow_blank=True)
+    payment_status = serializers.CharField(required=False, allow_blank=True)
+    type_event = serializers.CharField(required=False, allow_blank=True)
+    event = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, data):
+        custom_field = data.get('custom_field') or ''
+        custom_reference = ''
+        if custom_field:
+            try:
+                custom_data = json.loads(custom_field)
+                if isinstance(custom_data, dict):
+                    custom_reference = (
+                        custom_data.get('reference')
+                        or custom_data.get('ref_command')
+                        or custom_data.get('item_ref')
+                        or ''
+                    )
+            except Exception:
+                custom_reference = ''
+
+        reference = (
+            data.get('ref_command')
+            or data.get('reference')
+            or data.get('item_ref')
+            or custom_reference
+            or data.get('custom_field')
+        )
+        if not reference:
+            raise serializers.ValidationError(
+                "Référence de commande PayTech introuvable dans le callback."
+            )
+        data['reference_resolue'] = reference
+
+        status_resolu = (
+            data.get('status')
+            or data.get('payment_status')
+            or data.get('type_event')
+            or data.get('event')
+            or ''
+        )
+        data['status_resolu'] = status_resolu
+        return data

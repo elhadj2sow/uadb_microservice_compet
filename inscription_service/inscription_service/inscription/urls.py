@@ -9,6 +9,8 @@ from .views import (
     ValiderEtapeView,
     StatutWorkflowView,
     PaiementView,
+    PayTechInitPaiementView,
+    PayTechWebhookView,
     StatistiquesView,
     EtapesBloqueeView,
 )
@@ -69,6 +71,16 @@ urlpatterns = [
         'inscriptions/<int:pk>/paiement/',
         PaiementView.as_view(),
         name='paiement'
+    ),
+    path(
+        'inscriptions/<int:pk>/paiement/paytech/initier/',
+        PayTechInitPaiementView.as_view(),
+        name='paiement-paytech-initier'
+    ),
+    path(
+        'paiements/paytech/webhook/',
+        PayTechWebhookView.as_view(),
+        name='paiement-paytech-webhook'
     ),
 
     # ── Usage interne (service IA) ────────────────────────

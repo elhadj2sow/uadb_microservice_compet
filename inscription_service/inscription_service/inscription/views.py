@@ -1,10 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
+import json
 import unicodedata
 import requests
 import logging
@@ -16,12 +17,15 @@ from .serializers import (
     PreinscriptionSerializer, ValiderEtapeSerializer,
     PaiementSerializer, PaiementCreateSerializer,
     PaiementSoumissionSerializer,
+    PayTechInitSerializer,
+    PayTechWebhookSerializer,
     ValidationServiceSerializer,
 )
 from .permissions import (
     EstEtudiant, EstAgentScolarite, EstAgentComptable,
     EstAgentOuAdmin, EstAdmin,
 )
+from .signals import auto_valider_comptabilite_si_paiement_confirme
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,129 @@ def _annee_precedente(annee_universitaire):
         return f"{debut_i - 1}-{fin_i - 1}"
     except Exception:
         return None
+
+
+def _statut_paytech_to_interne(statut_externe):
+    statut = (statut_externe or '').strip().lower()
+    if statut in {
+        'paid', 'success', 'succeeded', 'completed',
+        'approved', 'ok', 'done', 'sale_complete',
+        'payment_success', 'successful'
+    }:
+        return 'confirme'
+    if 'success' in statut or 'complete' in statut or 'paid' in statut:
+        return 'confirme'
+    if statut in {'partial', 'partially_paid'}:
+        return 'partiel'
+    if statut in {'refund', 'refunded', 'rembourse'}:
+        return 'rembourse'
+    return 'en_attente'
+
+
+def _normaliser_redirect_url(url, fallback):
+    value = (url or '').strip()
+    if not value:
+        value = (fallback or '').strip()
+
+    # PayTech attend une URL publique et HTTPS pour la redirection.
+    if value.lower().startswith('https://') and 'localhost' not in value.lower():
+        return value
+
+    return fallback
+
+
+def _initier_paytech_transaction(*, inscription, paiement, success_url, cancel_url, target_payment=''):
+    if not settings.PAYTECH_ENABLED:
+        raise ValueError("PayTech est désactivé dans la configuration.")
+
+    if not settings.PAYTECH_API_KEY or not settings.PAYTECH_API_SECRET:
+        raise ValueError("Clés PayTech manquantes dans la configuration.")
+
+    reference = (
+        paiement.reference_paiement
+        or f"INSC-{inscription.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+    )
+
+    ipn_url = settings.PAYTECH_WEBHOOK_URL
+    success = _normaliser_redirect_url(
+        success_url,
+        settings.PAYTECH_SUCCESS_URL,
+    )
+    cancel = _normaliser_redirect_url(
+        cancel_url,
+        settings.PAYTECH_CANCEL_URL,
+    )
+
+    if not success:
+        success = 'https://paytech.sn/mobile/success'
+    if not cancel:
+        cancel = 'https://paytech.sn/mobile/cancel'
+
+    payload = {
+        'item_name': f"Frais inscription {inscription.annee_universitaire}",
+        'item_price': float(paiement.montant),
+        'currency': 'XOF',
+        'ref_command': reference,
+        'command_name': f"Inscription {inscription.id}",
+        'env': 'test' if settings.PAYTECH_SANDBOX else 'prod',
+        'custom_field': json.dumps({
+            'inscription_id': inscription.id,
+            'etudiant_id': inscription.etudiant_id,
+            'reference': reference,
+        }),
+    }
+
+    if success:
+        payload['success_url'] = success
+    if cancel:
+        payload['cancel_url'] = cancel
+    if ipn_url and str(ipn_url).lower().startswith('https://'):
+        payload['ipn_url'] = ipn_url
+    if target_payment:
+        payload['target_payment'] = target_payment
+
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'API_KEY': settings.PAYTECH_API_KEY,
+        'API_SECRET': settings.PAYTECH_API_SECRET,
+    }
+
+    response = requests.post(
+        f"{settings.PAYTECH_BASE_URL.rstrip('/')}/payment/request-payment",
+        json=payload,
+        headers=headers,
+        timeout=20,
+    )
+    data = response.json() if response.content else {}
+
+    if response.status_code >= 400:
+        raise ValueError(
+            data.get('message')
+            or data.get('error')
+            or "Erreur PayTech lors de l'initialisation du paiement."
+        )
+
+    payment_url = (
+        data.get('redirect_url')
+        or data.get('payment_url')
+        or data.get('url')
+    )
+    token = data.get('token') or data.get('payment_token') or ''
+    transaction_id = data.get('transaction_id') or data.get('id') or ''
+    status_ext = data.get('status') or ''
+
+    if not payment_url:
+        raise ValueError("PayTech n'a pas retourné d'URL de paiement.")
+
+    return {
+        'reference': reference,
+        'payment_url': payment_url,
+        'token': token,
+        'transaction_id': transaction_id,
+        'status': status_ext,
+        'raw': data,
+    }
 
 
 # ─────────────────────────────────────────────
@@ -595,7 +722,7 @@ class StatutWorkflowView(APIView):
 
         # L'étudiant ne peut voir que sa propre inscription
         roles = getattr(request.user, 'roles', [])
-        if 'etudiant' in roles and not 'admin' in roles:
+        if 'etudiant' in roles and 'admin' not in roles:
             if request.user.etudiant_id != inscription.etudiant_id:
                 return Response(
                     {'error': 'Accès refusé.'},
@@ -788,6 +915,181 @@ class PaiementView(APIView):
             'message' : 'Paiement enregistre et traite par la comptabilite.',
             'paiement': PaiementSerializer(paiement).data,
         })
+
+
+class PayTechInitPaiementView(APIView):
+    """
+    POST /api/inscriptions/{id}/paiement/paytech/initier/
+    Initialise un paiement en ligne PayTech et retourne l'URL de redirection.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        inscription = get_object_or_404(Inscription, pk=pk)
+
+        roles = getattr(request.user, 'roles', [])
+        if ('etudiant' in roles
+                and request.user.etudiant_id != inscription.etudiant_id):
+            return Response(
+                {'error': 'Accès refusé.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = PayTechInitSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        montant_attendu = _montant_attendu_inscription(inscription)
+        if montant_attendu is None:
+            return Response(
+                {
+                    'error': (
+                        "Impossible de déterminer le montant d'inscription "
+                        "pour cette formation."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        paiement, _ = Paiement.objects.get_or_create(
+            inscription=inscription,
+            defaults={'montant': montant_attendu}
+        )
+
+        if paiement.statut_paiement == 'confirme':
+            return Response(
+                {
+                    'error': 'Ce paiement est déjà confirmé.',
+                    'paiement': PaiementSerializer(paiement).data,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        paiement.montant = montant_attendu
+        paiement.mode_paiement = 'paytech'
+        paiement.provider = 'paytech'
+        paiement.statut_paiement = 'en_attente'
+
+        try:
+            init_data = _initier_paytech_transaction(
+                inscription=inscription,
+                paiement=paiement,
+                success_url=serializer.validated_data.get('success_url'),
+                cancel_url=serializer.validated_data.get('cancel_url'),
+                target_payment=serializer.validated_data.get('target_payment', ''),
+            )
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+        except Exception as e:
+            logger.warning(f"Erreur initiation PayTech inscription={pk}: {e}")
+            return Response(
+                {'error': 'Erreur technique lors de l\'initiation du paiement.'},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        paiement.reference_paiement = init_data['reference']
+        paiement.payment_url = init_data['payment_url']
+        paiement.transaction_token = init_data['token']
+        paiement.transaction_id = init_data['transaction_id']
+        paiement.statut_externe = init_data['status']
+        paiement.callback_payload = init_data['raw']
+        paiement.date_paiement = timezone.now()
+        paiement.save()
+
+        return Response(
+            {
+                'message': 'Session PayTech initialisée.',
+                'payment_url': paiement.payment_url,
+                'reference_paiement': paiement.reference_paiement,
+                'transaction_token': paiement.transaction_token,
+                'paiement': PaiementSerializer(paiement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PayTechWebhookView(APIView):
+    """
+    POST /api/paiements/paytech/webhook/
+    Callback serveur-à-serveur de PayTech.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if hasattr(request.data, 'dict'):
+            payload = request.data.dict()
+        elif isinstance(request.data, dict):
+            payload = request.data
+        else:
+            payload = {}
+        serializer = PayTechWebhookSerializer(data=payload)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reference = serializer.validated_data['reference_resolue']
+
+        try:
+            paiement = Paiement.objects.select_related('inscription').get(
+                reference_paiement=reference
+            )
+        except Paiement.DoesNotExist:
+            return Response(
+                {'error': 'Référence de paiement inconnue.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        status_ext = serializer.validated_data.get('status_resolu', '')
+        paiement_status = _statut_paytech_to_interne(status_ext)
+
+        paiement.provider = 'paytech'
+        paiement.mode_paiement = 'paytech'
+        paiement.statut_externe = status_ext
+        paiement.transaction_id = serializer.validated_data.get(
+            'transaction_id', paiement.transaction_id
+        )
+        paiement.transaction_token = serializer.validated_data.get(
+            'token', paiement.transaction_token
+        )
+        paiement.callback_payload = payload
+        paiement.date_callback = timezone.now()
+
+        montant_callback = serializer.validated_data.get('amount')
+        if montant_callback is not None:
+            paiement.montant_paye = montant_callback
+
+        paiement.statut_paiement = paiement_status
+        if paiement_status == 'confirme':
+            if montant_callback is None or paiement.montant_paye < paiement.montant:
+                # Certains callbacks PayTech ne renvoient pas le montant ; on
+                # crédite alors le montant attendu à la confirmation.
+                paiement.montant_paye = paiement.montant
+            paiement.date_confirmation = timezone.now()
+            paiement.date_paiement = paiement.date_paiement or timezone.now()
+
+        paiement.save()
+
+        if paiement_status == 'confirme':
+            auto_valider_comptabilite_si_paiement_confirme(
+                paiement.inscription_id
+            )
+
+        return Response(
+            {
+                'message': 'Callback PayTech traité.',
+                'reference_paiement': paiement.reference_paiement,
+                'statut_paiement': paiement.statut_paiement,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # ─────────────────────────────────────────────

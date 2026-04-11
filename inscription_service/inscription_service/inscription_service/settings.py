@@ -113,3 +113,22 @@ SERVICE_NOTIFICATION = config('SERVICE_NOTIFICATION', default='http://localhost:
 
 SERVICE_INTERNAL_USER     = config('SERVICE_INTERNAL_USER',     default='service_inscription')
 SERVICE_INTERNAL_PASSWORD = config('SERVICE_INTERNAL_PASSWORD', default='secret')
+
+# Paiement en ligne PayTech
+PAYTECH_ENABLED = config('PAYTECH_ENABLED', default=False, cast=bool)
+PAYTECH_SANDBOX = config('PAYTECH_SANDBOX', default=True, cast=bool)
+PAYTECH_BASE_URL = config('PAYTECH_BASE_URL', default='https://paytech.sn/api')
+PAYTECH_API_KEY = config('PAYTECH_API_KEY', default='')
+PAYTECH_API_SECRET = config('PAYTECH_API_SECRET', default='')
+PAYTECH_SUCCESS_URL = config(
+    'PAYTECH_SUCCESS_URL',
+    default='http://localhost:3000/paiement/success'
+)
+PAYTECH_CANCEL_URL = config(
+    'PAYTECH_CANCEL_URL',
+    default='http://localhost:3000/paiement/cancel'
+)
+PAYTECH_WEBHOOK_URL = config(
+    'PAYTECH_WEBHOOK_URL',
+    default='http://localhost:8002/api/paiements/paytech/webhook/'
+)

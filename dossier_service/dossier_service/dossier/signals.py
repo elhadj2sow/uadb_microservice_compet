@@ -12,9 +12,6 @@ PIECES_OBLIGATOIRES = [
     'cni',
     'photo',
     'acte_naissance',
-    'certificat_medical',
-    'quitus_bibliotheque',
-    'recu_paiement',
 ]
 
 

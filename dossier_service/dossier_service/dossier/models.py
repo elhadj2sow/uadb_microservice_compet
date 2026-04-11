@@ -165,9 +165,6 @@ class PieceJustificative(models.Model):
         ('diplome',             'Diplôme'),
         ('releve_notes',        'Relevé de notes'),
         ('acte_naissance',      'Acte de naissance'),
-        ('certificat_medical',  'Certificat médical'),
-        ('quitus_bibliotheque', 'Quitus bibliothèque'),
-        ('recu_paiement',       'Reçu de paiement'),
         ('autre',               'Autre document'),
     ]
     STATUT_CHOICES = [

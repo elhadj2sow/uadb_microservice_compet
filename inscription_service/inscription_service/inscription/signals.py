@@ -82,6 +82,45 @@ def notifier_etudiant(etudiant_id, message, canal='email'):
         logger.warning(f"Notification étudiant {etudiant_id} échouée : {e}")
 
 
+def auto_valider_comptabilite_si_paiement_confirme(inscription_id):
+    """
+    Si le paiement est déjà confirmé et que l'étape comptabilité est active,
+    valide automatiquement la ValidationService comptabilite pour débloquer
+    le workflow sans intervention manuelle.
+    """
+    from .models import Paiement, ValidationService, EtapeWorkflow
+
+    paiement = Paiement.objects.filter(inscription_id=inscription_id).first()
+    if not paiement:
+        return False
+
+    if paiement.statut_paiement != 'confirme' or paiement.montant_paye < paiement.montant:
+        return False
+
+    vs = ValidationService.objects.filter(
+        inscription_id=inscription_id,
+        type_service='comptabilite',
+        statut_validation='en_attente'
+    ).first()
+    if not vs:
+        return False
+
+    etape_active = EtapeWorkflow.objects.filter(
+        validation_service=vs,
+        statut='en_cours'
+    ).exists()
+    if not etape_active:
+        return False
+
+    vs.statut_validation = 'valide'
+    vs.date_validation = timezone.now()
+    vs.observation = (
+        "Validation automatique: paiement PayTech confirmé par webhook."
+    )
+    vs.save()
+    return True
+
+
 @receiver(post_save, sender='inscription.Inscription')
 def demarrer_workflow(sender, instance, created, **kwargs):
     """
@@ -208,6 +247,16 @@ def passer_etape_suivante(sender, instance, **kwargs):
 
         wf.etape_courante = etape_suivante.ordre
         wf.save()
+
+        # Si la comptabilité devient active et que le paiement est déjà
+        # confirmé, valider automatiquement l'étape pour poursuivre le workflow.
+        if etape_suivante.validation_service.type_service == 'comptabilite':
+            if auto_valider_comptabilite_si_paiement_confirme(wf.inscription_id):
+                logger.info(
+                    f"Inscription {wf.inscription_id} — "
+                    "étape comptabilité validée automatiquement."
+                )
+                return
 
         # Notifier le service suivant
         notifier_service(

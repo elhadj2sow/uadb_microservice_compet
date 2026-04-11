@@ -127,6 +127,8 @@ python manage.py runserver 8002
 | GET | `/api/inscriptions/{id}/paiement/` | tous | Consulter le paiement |
 | POST | `/api/inscriptions/{id}/paiement/` | etudiant | Soumettre la preuve/transaction de paiement |
 | PATCH | `/api/inscriptions/{id}/paiement/` | agent_comptable | Confirmer et enregistrer le paiement |
+| POST | `/api/inscriptions/{id}/paiement/paytech/initier/` | etudiant | Initialiser un paiement en ligne PayTech |
+| POST | `/api/paiements/paytech/webhook/` | public (callback PayTech) | Mettre à jour le statut paiement depuis PayTech |
 | GET | `/api/workflows/etapes-bloquees/` | interne (service IA) | Étapes en retard |
 
 ---
@@ -232,7 +234,7 @@ curl -X PATCH http://localhost:8002/api/inscriptions/1/paiement/ \
   }'
 ```
 
-### 5. Consulter l'état du workflow (étudiant)
+### 7. Consulter l'état du workflow (étudiant)
 
 ```bash
 curl -X GET "http://localhost:8002/api/inscriptions/mon-inscription/?annee=2024-2025" \
@@ -280,6 +282,39 @@ Le token JWT doit contenir le champ `roles` avec les valeurs suivantes :
   "etudiant_id": null
 }
 ```
+
+### 5. Initialiser un paiement en ligne PayTech (étudiant)
+
+```bash
+curl -X POST http://localhost:8002/api/inscriptions/1/paiement/paytech/initier/ \
+  -H "Authorization: Bearer <token_etudiant>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "success_url": "https://votre-tunnel.ngrok-free.app/paiement/success",
+    "cancel_url": "https://votre-tunnel.ngrok-free.app/paiement/cancel",
+    "target_payment": "Wave"
+  }'
+```
+
+Remplacez `https://votre-tunnel.ngrok-free.app` par l'URL HTTPS publique réelle de votre tunnel (ngrok/cloudflared).
+
+Réponse attendue: `payment_url` à ouvrir/redirect côté frontend.
+
+Notes Wave:
+
+- `target_payment: "Wave"` force l'affichage de la méthode Wave dans le checkout.
+- En sandbox (`env=test`), PayTech peut ne pas afficher un QR code Wave selon le scénario de test.
+- Le mode de validation peut passer par saisie/confirmation numéro mobile plutôt qu'un QR code.
+- Évitez `http://localhost` pour `success_url` et `cancel_url` : PayTech peut refuser avec `successRedirectUrl doit être un URL`.
+- Utilisez des URLs publiques HTTPS (ou les fallbacks `https://paytech.sn/mobile/success` et `https://paytech.sn/mobile/cancel`).
+
+### 6. Callback webhook PayTech
+
+Endpoint backend à exposer (serveur-à-serveur) :
+
+`POST /api/paiements/paytech/webhook/`
+
+Le callback met à jour automatiquement `statut_paiement` (`confirme`, `partiel`, `en_attente`, ...).
 
 ---
 
