@@ -128,6 +128,8 @@ class RegisterEtudiantSerializer(serializers.Serializer):
         return data
 
     def create(self, validated_data):
+        from django.db import transaction
+
         # Extraire les données du profil étudiant
         nom            = validated_data.pop('nom')
         prenom         = validated_data.pop('prenom')
@@ -137,28 +139,29 @@ class RegisterEtudiantSerializer(serializers.Serializer):
         telephone      = validated_data.pop('telephone', '')
         ine            = validated_data.pop('ine', None)
 
-        # Créer le compte utilisateur
-        user = Utilisateur.objects.create_user(
-            username = validated_data['username'],
-            email    = validated_data['email'],
-            password = validated_data['password'],
-        )
+        with transaction.atomic():
+            # Créer le compte utilisateur
+            user = Utilisateur.objects.create_user(
+                username = validated_data['username'],
+                email    = validated_data['email'],
+                password = validated_data['password'],
+            )
 
-        # Assigner le rôle étudiant
-        role_etudiant, _ = Role.objects.get_or_create(libelle='etudiant')
-        user.roles.add(role_etudiant)
+            # Assigner le rôle étudiant
+            role_etudiant, _ = Role.objects.get_or_create(libelle='etudiant')
+            user.roles.add(role_etudiant)
 
-        # Créer le profil étudiant
-        Etudiant.objects.create(
-            utilisateur    = user,
-            nom            = nom,
-            prenom         = prenom,
-            date_naissance = date_naissance,
-            lieu_naissance = lieu_naissance,
-            sexe           = sexe,
-            telephone      = telephone,
-            ine            = ine if ine else None,
-        )
+            # Créer le profil étudiant
+            Etudiant.objects.create(
+                utilisateur    = user,
+                nom            = nom,
+                prenom         = prenom,
+                date_naissance = date_naissance,
+                lieu_naissance = lieu_naissance,
+                sexe           = sexe,
+                telephone      = telephone,
+                ine            = ine if ine else None,
+            )
 
         return user
 

@@ -21,6 +21,7 @@ from .serializers import (
 from .permissions import (
     EstEtudiant, EstAgentScolarite,
     EstAgentOuAdmin, EstAdmin,
+    EstAdminOuResponsablePedagogique,
 )
 from .storage import (
     uploader_fichier, supprimer_fichier,
@@ -640,9 +641,9 @@ class SupprimerPieceView(APIView):
 class StatistiquesDossierView(APIView):
     """
     GET /api/dossiers/statistiques/
-    Tableau de bord pour l'administration.
+    Tableau de bord pour l'administration et responsables pédagogiques.
     """
-    permission_classes = [IsAuthenticated, EstAdmin]
+    permission_classes = [IsAuthenticated, EstAdminOuResponsablePedagogique]
 
     def get(self, request):
         annee = request.query_params.get(

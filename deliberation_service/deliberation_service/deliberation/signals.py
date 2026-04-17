@@ -43,8 +43,7 @@ def _recalculer_resultat(resultat):
     from .utils import appeler_moteur_regles
 
     notes = Note.objects.filter(
-        resultat   = resultat,
-        verrouille = False,
+        resultat       = resultat,
         valeur__isnull = False
     )
 
@@ -55,12 +54,14 @@ def _recalculer_resultat(resultat):
     total_points     = 0
     total_coeff      = 0
     credits_valides  = 0
+    credits_total    = 0
 
     for note in notes:
-        coeff = float(note.coefficient_ue)
+        coeff  = float(note.coefficient_ue)
         valeur = float(note.valeur)
-        total_points += valeur * coeff
-        total_coeff  += coeff
+        total_points  += valeur * coeff
+        total_coeff   += coeff
+        credits_total += note.credit_ue
         if valeur >= 10:
             credits_valides += note.credit_ue
 
@@ -80,6 +81,7 @@ def _recalculer_resultat(resultat):
     Resultat.objects.filter(pk=resultat.pk).update(
         moyenne_annuelle = moyenne,
         credits_valides  = credits_valides,
+        credits_total    = credits_total,
         decision         = decision_data.get('decision', 'en_attente'),
         mention          = decision_data.get('mention', ''),
     )

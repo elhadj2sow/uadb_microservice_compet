@@ -39,3 +39,12 @@ class EstAdmin(BasePermission):
 
     def has_permission(self, request, view):
         return 'admin' in get_roles(request.user)
+
+
+# Permission personnalisée : admin OU responsable_pedagogique
+class EstAdminOuResponsablePedagogique(BasePermission):
+    message = "Accès réservé aux administrateurs ou responsables pédagogiques."
+
+    def has_permission(self, request, view):
+        roles = get_roles(request.user)
+        return 'admin' in roles or 'responsable_pedagogique' in roles

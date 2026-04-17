@@ -3,6 +3,7 @@ from .views import (
     # Délibérations
     DeliberationListView,
     DeliberationDetailView,
+    DemarrerDeliberationView,
     CloturerDeliberationView,
     PVDeliberationView,
     StatistiquesDeliberationView,
@@ -38,6 +39,11 @@ urlpatterns = [
         'deliberations/<int:pk>/cloturer/',
         CloturerDeliberationView.as_view(),
         name='deliberation-cloturer'
+    ),
+    path(
+        'deliberations/<int:pk>/demarrer/',
+        DemarrerDeliberationView.as_view(),
+        name='deliberation-demarrer'
     ),
     path(
         'deliberations/<int:pk>/pv/',

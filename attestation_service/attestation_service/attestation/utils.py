@@ -179,22 +179,25 @@ def get_formation_detail(formation_id):
 def get_profil_etudiant(etudiant_id):
     """
     Récupère le profil de l'étudiant depuis le service auth.
-    Retourne dict ou None.
+    Utilise /api/auth/etudiants/{id}/ qui prend directement l'ID Etudiant.
+    Retourne dict au format {'etudiant': {...}} ou None.
     """
     try:
+        # Endpoint dédié : pk = ID de l'Etudiant (pas de l'Utilisateur)
         res = requests.get(
-            f"{settings.SERVICE_AUTH}/api/auth/utilisateurs/{etudiant_id}/",
+            f"{settings.SERVICE_AUTH}/api/auth/etudiants/{etudiant_id}/",
             headers=auth_header(),
             timeout=5
         )
         if res.status_code == 200:
-            payload = res.json()
-            payload_etudiant_id = payload.get('etudiant_id')
-            etu = payload.get('etudiant') or {}
-            if payload_etudiant_id == etudiant_id or etu.get('id') == etudiant_id:
-                return payload
+            etu = res.json()
+            # Retourner dans le format attendu par pdf_generator
+            return {'etudiant': etu}
+    except Exception as e:
+        logger.warning(f"Service auth (etudiants/{etudiant_id}) indisponible : {e}")
 
-        # Fallback : etudiant_id peut être différent de utilisateur.id.
+    # Fallback : chercher via la liste des utilisateurs étudiants
+    try:
         users = requests.get(
             f"{settings.SERVICE_AUTH}/api/auth/utilisateurs/?role=etudiant",
             headers=auth_header(),
@@ -202,13 +205,11 @@ def get_profil_etudiant(etudiant_id):
         )
         if users.status_code == 200:
             for item in users.json().get('results', []):
-                item_etudiant_id = item.get('etudiant_id')
                 etu = item.get('etudiant') or {}
-                if item_etudiant_id == etudiant_id or etu.get('id') == etudiant_id:
+                if etu.get('id') == etudiant_id:
                     user_id = item.get('id')
                     if not user_id:
                         return item
-
                     detail = requests.get(
                         f"{settings.SERVICE_AUTH}/api/auth/utilisateurs/{user_id}/",
                         headers=auth_header(),
@@ -217,10 +218,10 @@ def get_profil_etudiant(etudiant_id):
                     if detail.status_code == 200:
                         return detail.json()
                     return item
-        return None
     except Exception as e:
-        logger.warning(f"Service auth indisponible : {e}")
-        return None
+        logger.warning(f"Service auth (fallback liste) indisponible : {e}")
+
+    return None
 
 
 def notifier_etudiant(etudiant_id, message, canal='email'):

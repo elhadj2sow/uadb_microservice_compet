@@ -1,12 +1,20 @@
 import requests
 import logging
+import time
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# ── Cache token interne (évite un appel HTTP à chaque requête) ────────────────
+_token_cache = {'token': '', 'expires_at': 0}
+_TOKEN_TTL   = 240  # secondes (4 min)
+
 
 def get_internal_token():
-    """Token JWT pour les appels inter-services."""
+    """Token JWT pour les appels inter-services, mis en cache 4 min."""
+    now = time.time()
+    if _token_cache['token'] and now < _token_cache['expires_at']:
+        return _token_cache['token']
     try:
         res = requests.post(
             f"{settings.SERVICE_AUTH}/api/auth/login/",
@@ -16,10 +24,14 @@ def get_internal_token():
             },
             timeout=5
         )
-        return res.json().get('access', '')
+        token = res.json().get('access', '')
+        if token:
+            _token_cache['token']      = token
+            _token_cache['expires_at'] = now + _TOKEN_TTL
+        return token
     except Exception as e:
         logger.warning(f"Token interne non obtenu : {e}")
-        return ''
+        return _token_cache['token']  # retourner le dernier token connu si dispo
 
 
 def auth_header():
@@ -88,7 +100,10 @@ def appeler_moteur_regles(moyenne, credits, etudiant_id, deliberation_id):
             headers = auth_header(),
             timeout = 5
         )
-        return res.json()
+        if res.ok:
+            return res.json()
+        logger.warning(f"Service IA a répondu {res.status_code} — secours activé")
+        return _regles_secours(float(moyenne), int(credits))
     except Exception as e:
         logger.warning(f"Service IA indisponible : {e}")
         # Règles de secours locales si service IA indisponible

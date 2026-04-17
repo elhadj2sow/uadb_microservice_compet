@@ -12,6 +12,9 @@ from .views import (
     MettreAJourMatriculeView,
     RoleListView,
     JournalAuditView,
+    EtudiantDetailView,
+    EtudiantSearchView,
+    EtudiantNomsView,
 )
 
 urlpatterns = [
@@ -69,4 +72,19 @@ urlpatterns = [
     path('audit/',
          JournalAuditView.as_view(),
          name='journal-audit'),
+
+    # ── Vue d'information sur un étudiant ───────────────
+    path('etudiants/<int:pk>/',
+         EtudiantDetailView.as_view(),
+         name='etudiant-detail'),
+
+    # ── Recherche d'étudiants par nom (agents/pédagogues) ─
+    path('etudiants/search/',
+         EtudiantSearchView.as_view(),
+         name='etudiant-search'),
+
+    # ── Noms en batch par IDs (agents/pédagogues) ───────
+    path('etudiants/noms/',
+         EtudiantNomsView.as_view(),
+         name='etudiant-noms'),
 ]

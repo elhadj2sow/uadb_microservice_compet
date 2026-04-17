@@ -7,8 +7,10 @@ from django.utils import timezone
 from django.conf import settings
 import json
 import unicodedata
+import uuid
 import requests
 import logging
+from pathlib import Path
 
 from .models import (Inscription, Paiement,
                      ValidationService, Workflow, EtapeWorkflow)
@@ -115,6 +117,23 @@ def _annee_precedente(annee_universitaire):
         return None
 
 
+# Fichier écrit par start_tunnel.ps1 — contient l'URL courante du tunnel Cloudflare
+_TUNNEL_URL_FILE = Path(__file__).resolve().parent.parent.parent.parent / 'tunnel_url.txt'
+
+
+def _get_tunnel_base_url():
+    """Lit l'URL de base du tunnel depuis tunnel_url.txt (écrit par start_tunnel.ps1).
+    Retourne None si le fichier n'existe pas ou si l'URL n'est pas HTTPS."""
+    try:
+        if _TUNNEL_URL_FILE.exists():
+            url = _TUNNEL_URL_FILE.read_text(encoding='utf-8').strip().rstrip('/')
+            if url.startswith('https://'):
+                return url
+    except Exception:
+        pass
+    return None
+
+
 def _statut_paytech_to_interne(statut_externe):
     statut = (statut_externe or '').strip().lower()
     if statut in {
@@ -151,20 +170,20 @@ def _initier_paytech_transaction(*, inscription, paiement, success_url, cancel_u
     if not settings.PAYTECH_API_KEY or not settings.PAYTECH_API_SECRET:
         raise ValueError("Clés PayTech manquantes dans la configuration.")
 
-    reference = (
-        paiement.reference_paiement
-        or f"INSC-{inscription.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
-    )
+    # Toujours générer une référence unique à chaque tentative pour PayTech
+    reference = f"INSC-{inscription.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
-    ipn_url = settings.PAYTECH_WEBHOOK_URL
-    success = _normaliser_redirect_url(
-        success_url,
-        settings.PAYTECH_SUCCESS_URL,
-    )
-    cancel = _normaliser_redirect_url(
-        cancel_url,
-        settings.PAYTECH_CANCEL_URL,
-    )
+    # Priorité : tunnel_url.txt (start_tunnel.ps1) > settings (.env)
+    tunnel_base = _get_tunnel_base_url()
+    if tunnel_base:
+        ipn_url = f"{tunnel_base}/api/paiements/paytech/webhook/"
+        success = _normaliser_redirect_url(success_url, f"{tunnel_base}/paiement/success")
+        cancel  = _normaliser_redirect_url(cancel_url,  f"{tunnel_base}/paiement/cancel")
+        logger.info("[PAYTECH] URL dynamique depuis tunnel_url.txt : %s", tunnel_base)
+    else:
+        ipn_url = settings.PAYTECH_WEBHOOK_URL
+        success = _normaliser_redirect_url(success_url, settings.PAYTECH_SUCCESS_URL)
+        cancel  = _normaliser_redirect_url(cancel_url,  settings.PAYTECH_CANCEL_URL)
 
     if not success:
         success = 'https://paytech.sn/mobile/success'
@@ -201,20 +220,46 @@ def _initier_paytech_transaction(*, inscription, paiement, success_url, cancel_u
         'API_SECRET': settings.PAYTECH_API_SECRET,
     }
 
-    response = requests.post(
-        f"{settings.PAYTECH_BASE_URL.rstrip('/')}/payment/request-payment",
-        json=payload,
-        headers=headers,
-        timeout=20,
-    )
-    data = response.json() if response.content else {}
+    # Log du payload et des headers envoyés à PayTech
+    logger.error("[PAYTECH] Payload envoyé: %s", json.dumps(payload, ensure_ascii=False))
+    logger.error("[PAYTECH] Headers envoyés: %s", json.dumps(headers, ensure_ascii=False))
 
-    if response.status_code >= 400:
-        raise ValueError(
-            data.get('message')
-            or data.get('error')
-            or "Erreur PayTech lors de l'initialisation du paiement."
+    try:
+        response = requests.post(
+            f"{settings.PAYTECH_BASE_URL.rstrip('/')}/payment/request-payment",
+            json=payload,
+            headers=headers,
+            timeout=20,
         )
+    except requests.RequestException as e:
+        logger.error("[PAYTECH] Exception lors de la requête: %s", e)
+        raise ValueError(f"Erreur de connexion à PayTech: {e}")
+
+    logger.error("[PAYTECH] Code HTTP: %s", response.status_code)
+    logger.error("[PAYTECH] Réponse brute: %s", response.text)
+
+    try:
+        data = response.json() if response.content else {}
+    except Exception:
+        raise ValueError(f"Réponse PayTech invalide (non JSON): {response.text}")
+
+    # Vérifie d'abord le statut HTTP
+    if response.status_code >= 400:
+        msg = None
+        if isinstance(data, dict):
+            msg = data.get('message') or data.get('error')
+            if not msg and 'errors' in data and isinstance(data['errors'], list):
+                msg = "; ".join(str(e) for e in data['errors'])
+        raise ValueError(f"Erreur PayTech: statut HTTP {response.status_code}" + (f" — {msg}" if msg else ""))
+
+    # Vérifie le champ 'success' (PayTech renvoie toujours HTTP 200 même en cas d'erreur)
+    if isinstance(data, dict) and data.get('success') == 0:
+        msg = data.get('message') or data.get('error')
+        if not msg and 'errors' in data and isinstance(data['errors'], list):
+            msg = "; ".join(str(e) for e in data['errors'])
+        if not msg:
+            msg = "Erreur inconnue lors de l'initialisation du paiement PayTech."
+        raise ValueError(f"Erreur PayTech: {msg}")
 
     payment_url = (
         data.get('redirect_url')
@@ -236,6 +281,124 @@ def _initier_paytech_transaction(*, inscription, paiement, success_url, cancel_u
         'status': status_ext,
         'raw': data,
     }
+
+
+def _verifier_dossier(request, annee_universitaire=None):
+    """Appel au service IA pour vérifier complétude du dossier."""
+    try:
+        res_dossier = requests.get(
+            f"{settings.SERVICE_DOSSIER}/api/dossiers/mon-dossier/",
+            params={
+                'annee': annee_universitaire
+            } if annee_universitaire else None,
+            headers={'Authorization': request.META.get(
+                'HTTP_AUTHORIZATION', ''
+            )},
+            timeout=5
+        )
+        if res_dossier.status_code != 200:
+            return False, (
+                "Aucun dossier trouvé pour l'année universitaire demandée."
+            ), None
+
+        score = res_dossier.json().get('score_completude', 0)
+        dossier_id = res_dossier.json().get('id', 0)
+
+        res_ia = requests.post(
+            f"{settings.SERVICE_IA}/api/evaluer/",
+            json={
+                'type'       : 'completude_dossier',
+                'etudiant'   : request.user.etudiant_id,
+                'dossier_id' : dossier_id,
+                'score'      : score,
+            },
+            headers=auth_header(),
+            timeout=5
+        )
+        data = res_ia.json()
+        return (
+            data.get('eligible', False),
+            data.get('motif', ''),
+            dossier_id,
+        )
+    except Exception as e:
+        logger.warning(f"Vérification dossier ignorée : {e}")
+        return True, '', None
+
+
+def _verifier_reinscription(request, type_inscription, annee):
+    """Vérifie l'éligibilité à la réinscription via la délibération."""
+    if type_inscription != 'reinscription':
+        return True, ''
+
+    annee_prec = _annee_precedente(annee)
+    if not annee_prec:
+        return False, (
+            "Année universitaire invalide pour la réinscription. "
+            "Format attendu: YYYY-YYYY"
+        )
+
+    try:
+        res = requests.get(
+            f"{settings.SERVICE_DELIBERATION}/api/resultats/mes-resultats/",
+            headers={
+                'Authorization': request.META.get('HTTP_AUTHORIZATION', '')
+            },
+            timeout=5
+        )
+        if res.status_code != 200:
+            return True, (
+                "Résultats de délibération non disponibles pour le moment. "
+                "Réinscription autorisée sous réserve de validation pédagogique."
+            )
+
+        resultats = res.json().get('results', [])
+        cibles = [
+            r for r in resultats
+            if r.get('annee_universitaire') == annee_prec
+        ]
+        if not cibles:
+            return True, (
+                f"Aucun résultat de délibération pour l'année {annee_prec}. "
+                "Réinscription autorisée sous réserve de validation pédagogique."
+            )
+
+        cible = sorted(
+            cibles,
+            key=lambda r: (
+                1 if r.get('statut_deliberation') == 'cloturee' else 0,
+                r.get('semestre') or 0,
+            ),
+            reverse=True,
+        )[0]
+        decision = _normaliser_decision(cible.get('decision', ''))
+
+        if decision == 'admis':
+            return True, (
+                f"Admis(e) pour l'année {annee_prec} — vous êtes éligible à la réinscription."
+            )
+
+        if decision == 'rattrapage':
+            return True, (
+                "Décision rattrapage — réinscription autorisée sous réserve "
+                "de validation pédagogique complémentaire."
+            )
+
+        if decision in ('ajourne', 'exclu'):
+            return False, (
+                f"Réinscription refusée : décision de délibération "
+                f"\u00ab\u00a0{cible.get('decision')}\u00a0\u00bb pour l'année {annee_prec}."
+            )
+
+        return False, (
+            "Réinscription impossible : décision de délibération non déterminée."
+        )
+    except Exception:
+        # Service délibération inaccessible : autoriser sous réserve
+        return True, (
+            "Service de délibération temporairement indisponible. "
+            "Votre réinscription sera soumise sous réserve de validation pédagogique."
+        )
 
 
 # ─────────────────────────────────────────────
@@ -262,7 +425,7 @@ class PreinscriptionView(APIView):
             )
 
         # Vérifier complétude du dossier via service IA
-        eligible, motif, dossier_id = self._verifier_dossier(
+        eligible, motif, dossier_id = _verifier_dossier(
             request,
             serializer.validated_data.get('annee_universitaire')
         )
@@ -278,7 +441,7 @@ class PreinscriptionView(APIView):
             'premiere'
         )
         annee_universitaire = serializer.validated_data.get('annee_universitaire')
-        decision_ok, decision_message = self._verifier_reinscription(
+        decision_ok, decision_message = _verifier_reinscription(
             request,
             type_inscription,
             annee_universitaire,
@@ -305,121 +468,6 @@ class PreinscriptionView(APIView):
             status=status.HTTP_201_CREATED
         )
 
-    def _verifier_dossier(self, request, annee_universitaire=None):
-        """Appel au service IA pour vérifier complétude du dossier."""
-        try:
-            # Récupérer le score du dossier
-            res_dossier = requests.get(
-                f"{settings.SERVICE_DOSSIER}/api/dossiers/mon-dossier/",
-                params={
-                    'annee': annee_universitaire
-                } if annee_universitaire else None,
-                headers={'Authorization': request.META.get(
-                    'HTTP_AUTHORIZATION', ''
-                )},
-                timeout=5
-            )
-            if res_dossier.status_code != 200:
-                return False, (
-                    "Aucun dossier trouvé pour l'année universitaire demandée."
-                ), None
-
-            score = res_dossier.json().get('score_completude', 0)
-            dossier_id = res_dossier.json().get('id', 0)
-
-            # Appel au moteur de règles
-            res_ia = requests.post(
-                f"{settings.SERVICE_IA}/api/evaluer/",
-                json={
-                    'type'       : 'completude_dossier',
-                    'etudiant'   : request.user.etudiant_id,
-                    'dossier_id' : dossier_id,
-                    'score'      : score,
-                },
-                headers=auth_header(),
-                timeout=5
-            )
-            data = res_ia.json()
-            return (
-                data.get('eligible', False),
-                data.get('motif', ''),
-                dossier_id,
-            )
-        except Exception as e:
-            logger.warning(f"Vérification dossier ignorée : {e}")
-            # En cas d'erreur réseau, on laisse passer
-            return True, '', None
-
-    def _verifier_reinscription(self, request, type_inscription, annee):
-        if type_inscription != 'reinscription':
-            return True, ''
-
-        annee_prec = _annee_precedente(annee)
-        if not annee_prec:
-            return False, (
-                "Année universitaire invalide pour la réinscription. "
-                "Format attendu: YYYY-YYYY"
-            )
-
-        try:
-            res = requests.get(
-                f"{settings.SERVICE_DELIBERATION}/api/resultats/mes-resultats/",
-                headers={
-                    'Authorization': request.META.get('HTTP_AUTHORIZATION', '')
-                },
-                timeout=5
-            )
-            if res.status_code != 200:
-                return False, (
-                    "Impossible de vérifier votre décision de délibération "
-                    "pour la réinscription."
-                )
-
-            resultats = res.json().get('results', [])
-            cibles = [
-                r for r in resultats
-                if r.get('annee_universitaire') == annee_prec
-            ]
-            if not cibles:
-                return False, (
-                    f"Aucun résultat de délibération trouvé pour l'année {annee_prec}. "
-                    "Réinscription impossible pour le moment."
-                )
-
-            cible = sorted(
-                cibles,
-                key=lambda r: (
-                    1 if r.get('statut_deliberation') == 'cloturee' else 0,
-                    r.get('semestre') or 0,
-                ),
-                reverse=True,
-            )[0]
-            decision = _normaliser_decision(cible.get('decision', ''))
-
-            if decision == 'admis':
-                return True, ''
-
-            if decision == 'rattrapage':
-                return True, (
-                    "Réinscription conditionnelle autorisée: décision rattrapage. "
-                    "Validation pédagogique complémentaire requise."
-                )
-
-            if decision in ('ajourne', 'exclu'):
-                return False, (
-                    "Réinscription refusée: décision de délibération "
-                    f"'{cible.get('decision')}'."
-                )
-
-            return False, (
-                "Réinscription impossible: décision de délibération "
-                "non déterminée."
-            )
-        except Exception:
-            return False, (
-                "Erreur de vérification de la décision de délibération. "
-                "Veuillez réessayer plus tard."
-            )
 
 
 class AutoCreateInscriptionView(APIView):
@@ -550,6 +598,60 @@ class InscriptionListView(APIView):
     """
     permission_classes = [IsAuthenticated, EstAgentOuAdmin]
 
+    def _fetch_noms(self, auth_header, etudiant_ids, formation_ids):
+        """Résout tous les noms en un seul batch entièrement parallèle."""
+        from concurrent.futures import ThreadPoolExecutor
+        headers = {'Authorization': auth_header}
+        etudiant_map  = {}
+        formation_map = {}
+
+        def fetch_etudiant(eid):
+            try:
+                r = requests.get(
+                    f"{settings.SERVICE_AUTH}/api/auth/etudiants/{eid}/",
+                    headers=headers, timeout=2
+                )
+                if r.status_code == 200:
+                    d = r.json()
+                    prenom = (d.get('prenom') or '').strip()
+                    nom    = (d.get('nom') or '').strip()
+                    full   = f"{prenom} {nom}".strip()
+                    return ('e', eid, full if full else f'Étudiant #{eid}')
+                return ('e', eid, f'Étudiant #{eid}')
+            except Exception:
+                pass
+            return ('e', eid, f'Étudiant #{eid}')
+
+        def fetch_formation(fid):
+            try:
+                r = requests.get(
+                    f"{settings.SERVICE_DOSSIER}/api/formations/{fid}/",
+                    headers=headers, timeout=2
+                )
+                if r.status_code == 200:
+                    d = r.json()
+                    return ('f', fid, d.get('libelle') or d.get('code_formation') or f'#{fid}')
+            except Exception:
+                pass
+            return ('f', fid, f'#{fid}')
+
+        tasks = [(fetch_etudiant, i) for i in etudiant_ids] + \
+                [(fetch_formation, i) for i in formation_ids]
+
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(fn, arg) for fn, arg in tasks]
+            for fut in futures:
+                try:
+                    kind, id_, val = fut.result(timeout=3)
+                    if kind == 'e':
+                        etudiant_map[id_] = val
+                    else:
+                        formation_map[id_] = val
+                except Exception:
+                    pass
+
+        return etudiant_map, formation_map
+
     def get(self, request):
         qs = Inscription.objects.all().order_by('-date_preinscription')
 
@@ -569,9 +671,25 @@ class InscriptionListView(APIView):
             qs = qs.filter(etudiant_id=etudiant)
 
         serializer = InscriptionListSerializer(qs, many=True)
+        data = serializer.data
+
+        # Enrichissement : résoudre noms etudiant + libellé formation
+        try:
+            auth_hdr = request.META.get('HTTP_AUTHORIZATION', '')
+            etudiant_ids  = list({item['etudiant_id'] for item in data})
+            formation_ids = list({item['formation_id'] for item in data})
+            etudiant_map, formation_map = self._fetch_noms(auth_hdr, etudiant_ids, formation_ids)
+            for item in data:
+                eid = item['etudiant_id']
+                fid = item['formation_id']
+                item['etudiant_nom']      = etudiant_map.get(eid, f'#{eid}')
+                item['formation_libelle'] = formation_map.get(fid, f'#{fid}')
+        except Exception as e:
+            logger.warning(f"Enrichissement inscriptions échoué : {e}")
+
         return Response({
             'count'  : qs.count(),
-            'results': serializer.data,
+            'results': data,
         })
 
 
@@ -1168,3 +1286,274 @@ class EtapesBloqueeView(APIView):
                 })
 
         return Response(etapes_retard)
+
+
+# ─────────────────────────────────────────────
+#  CONFIRMATION SUCCESS PAYTECH (redirect URL)
+# ─────────────────────────────────────────────
+
+class PayTechConfirmerSuccessView(APIView):
+    """
+    POST /api/paiements/confirmer-success/
+    Appelé par la page frontend /paiement/success après la redirection PayTech.
+    Confirme automatiquement le paiement en_attente identifié par ref_command.
+    Fonctionne SANS dépendre du webhook (contourne les problèmes de tunnel mort).
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        ref_command = request.data.get('ref_command') or request.query_params.get('ref_command')
+        if not ref_command:
+            return Response(
+                {'error': 'Paramètre ref_command manquant.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            paiement = Paiement.objects.select_related('inscription').get(
+                reference_paiement=ref_command
+            )
+        except Paiement.DoesNotExist:
+            return Response(
+                {'error': 'Référence de paiement inconnue.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Si déjà confirmé, renvoyer les infos sans rien modifier
+        if paiement.statut_paiement == 'confirme':
+            return Response(
+                {
+                    'already_confirmed': True,
+                    'message': 'Paiement déjà confirmé.',
+                    'reference_paiement': paiement.reference_paiement,
+                    'inscription_id': paiement.inscription_id,
+                    'montant': paiement.montant,
+                    'montant_paye': paiement.montant_paye,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Confirmer le paiement (PayTech redirige vers success_url uniquement si paiement réussi)
+        paiement.statut_paiement = 'confirme'
+        paiement.montant_paye = paiement.montant_paye or paiement.montant
+        paiement.date_confirmation = timezone.now()
+        paiement.date_paiement = paiement.date_paiement or timezone.now()
+        paiement.provider = paiement.provider or 'paytech'
+        paiement.mode_paiement = paiement.mode_paiement or 'paytech'
+        paiement.save()
+
+        # Déclencher la validation comptabilité comme le fait le webhook
+        auto_valider_comptabilite_si_paiement_confirme(paiement.inscription_id)
+
+        logger.info(
+            f"Paiement {paiement.reference_paiement} confirmé via success_url redirect "
+            f"(inscription {paiement.inscription_id})"
+        )
+
+        return Response(
+            {
+                'already_confirmed': False,
+                'message': 'Paiement confirmé avec succès.',
+                'reference_paiement': paiement.reference_paiement,
+                'inscription_id': paiement.inscription_id,
+                'montant': paiement.montant,
+                'montant_paye': paiement.montant_paye,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ─────────────────────────────────────────────
+#  ENDPOINTS RÉINSCRIPTION
+# ─────────────────────────────────────────────
+
+class ReinscriptionEligibiliteView(APIView):
+    """
+    GET /api/inscriptions/reinscription/eligibilite/?annee=2024-2025
+    Vérifie si l'étudiant est éligible à la réinscription pour l'année cible.
+    Retourne: eligible, message, formation_id, dossier_id, frais_estimatifs,
+              numéro de matricule de l'année précédente, et les étapes à suivre.
+    """
+    permission_classes = [IsAuthenticated, EstEtudiant]
+
+    def get(self, request):
+        annee_cible = request.query_params.get('annee', self._annee_courante())
+        annee_prec  = _annee_precedente(annee_cible)
+
+        if not annee_prec:
+            return Response(
+                {'error': "Format d'année invalide. Attendu: YYYY-YYYY."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. Inscription de l'année précédente (source de formation_id et matricule)
+        inscription_prec = Inscription.objects.filter(
+            etudiant_id=request.user.etudiant_id,
+            annee_universitaire=annee_prec
+        ).first()
+
+        if not inscription_prec:
+            return Response({
+                'eligible': False,
+                'message': (
+                    f"Aucune inscription trouvée pour l'année {annee_prec}. "
+                    "La réinscription n'est possible qu'après une première année."
+                ),
+                'annee_cible': annee_cible,
+                'annee_precedente': annee_prec,
+            })
+
+        # 2. Inscription déjà existante pour l'année cible ?
+        inscription_existante = Inscription.objects.filter(
+            etudiant_id=request.user.etudiant_id,
+            annee_universitaire=annee_cible
+        ).first()
+
+        if inscription_existante:
+            return Response({
+                'eligible': False,
+                'message': f"Vous êtes déjà inscrit(e) pour l'année {annee_cible}.",
+                'annee_cible': annee_cible,
+                'inscription_id': inscription_existante.id,
+                'statut_existant': inscription_existante.statut_inscription,
+            })
+
+        # 3. Vérification décision de délibération
+        eligible, message = _verifier_reinscription(
+            request, 'reinscription', annee_cible
+        )
+
+        # 4. Frais estimatifs depuis le niveau de la formation
+        frais = None
+        try:
+            formation = _get_formation(inscription_prec.formation_id)
+            if formation:
+                frais = FRAIS_PAR_NIVEAU.get(formation.get('niveau'))
+        except Exception:
+            pass
+
+        return Response({
+            'eligible': eligible,
+            'message': message or "Éligible à la réinscription.",
+            'annee_cible': annee_cible,
+            'annee_precedente': annee_prec,
+            'formation_id': inscription_prec.formation_id,
+            'dossier_id': inscription_prec.dossier_id,
+            'numero_matricule': inscription_prec.numero_matricule,
+            'frais_estimatifs': frais,
+            'avertissement': message if eligible and 'indisponible' in (message or '').lower() else None,
+            'etapes': [
+                "Étape 1 — Soumettre la demande de réinscription (POST /api/inscriptions/reinscription/)",
+                "Étape 2 — Payer les frais de réinscription (POST /api/inscriptions/{id}/paiement/paytech/initier/)",
+                "Étape 3 — Validation scolarité (agent_scolarite)",
+                "Étape 4 — Validation comptabilité (agent_comptable)",
+                "Étape 5 — Validation médicale (service_medical)",
+                "Étape 6 — Validation bibliothèque (bibliotheque)",
+            ],
+        })
+
+    def _annee_courante(self):
+        y = timezone.now().year
+        return f"{y}-{y + 1}"
+
+
+class ReinscriptionView(APIView):
+    """
+    POST /api/inscriptions/reinscription/
+    Soumet une demande de réinscription pour l'étudiant authentifié.
+
+    Auto-remplit formation_id et dossier_id depuis la dernière inscription.
+    Vérifie la décision de délibération (admis ou rattrapage requis).
+    Déclenche automatiquement le workflow 4 étapes.
+
+    Body JSON optionnel :
+      - annee_universitaire (str) : année cible, défaut = année courante
+      - formation_id (int)        : surcharge si changement de formation
+    """
+    permission_classes = [IsAuthenticated, EstEtudiant]
+
+    def post(self, request):
+        annee_cible = request.data.get(
+            'annee_universitaire', self._annee_courante()
+        )
+        annee_prec = _annee_precedente(annee_cible)
+
+        if not annee_prec:
+            return Response(
+                {'error': "Format d'année invalide. Attendu: YYYY-YYYY."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1. Inscription de l'année précédente
+        inscription_prec = Inscription.objects.filter(
+            etudiant_id=request.user.etudiant_id,
+            annee_universitaire=annee_prec
+        ).first()
+
+        if not inscription_prec:
+            return Response(
+                {
+                    'error': (
+                        f"Aucune inscription trouvée pour l'année {annee_prec}. "
+                        "La réinscription requiert une inscription préalable."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 2. Vérification doublon pour l'année cible
+        if Inscription.objects.filter(
+            etudiant_id=request.user.etudiant_id,
+            annee_universitaire=annee_cible
+        ).exists():
+            return Response(
+                {'error': f"Une inscription existe déjà pour l'année {annee_cible}."},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        # 3. Vérification décision de délibération
+        eligible, decision_message = _verifier_reinscription(
+            request, 'reinscription', annee_cible
+        )
+        if not eligible:
+            return Response(
+                {'error': decision_message},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 4. Vérifier complétude du dossier
+        # Pour une réinscription, le dossier est celui de l'année précédente
+        _, _, dossier_id = _verifier_dossier(request, annee_prec)
+        dossier_id = dossier_id or inscription_prec.dossier_id
+
+        # 5. Résoudre formation et dossier
+        formation_id = (
+            request.data.get('formation_id') or inscription_prec.formation_id
+        )
+
+        # 6. Créer la réinscription — signal demarrer_workflow déclenché
+        inscription = Inscription.objects.create(
+            etudiant_id=request.user.etudiant_id,
+            formation_id=formation_id,
+            annee_universitaire=annee_cible,
+            type_inscription='reinscription',
+            dossier_id=dossier_id,
+            observation=decision_message if decision_message else '',
+        )
+
+        payload = InscriptionSerializer(inscription).data
+        payload['etapes_suivantes'] = [
+            "Étape 1/5 — Payer les frais de réinscription",
+            "Étape 2/5 — Validation scolarité",
+            "Étape 3/5 — Validation comptabilité",
+            "Étape 4/5 — Validation médicale",
+            "Étape 5/5 — Validation bibliothèque",
+        ]
+        if decision_message:
+            payload['avertissement'] = decision_message
+
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+    def _annee_courante(self):
+        y = timezone.now().year
+        return f"{y}-{y + 1}"

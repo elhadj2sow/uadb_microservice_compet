@@ -85,12 +85,15 @@ class InscriptionSerializer(serializers.ModelSerializer):
 
 class InscriptionListSerializer(serializers.ModelSerializer):
     """Version allégée pour les listes (sans détails workflow)."""
-    progression = serializers.SerializerMethodField()
+    progression      = serializers.SerializerMethodField()
+    etudiant_nom     = serializers.CharField(default='', read_only=True)
+    formation_libelle = serializers.CharField(default='', read_only=True)
 
     class Meta:
         model  = Inscription
         fields = [
-            'id', 'etudiant_id', 'formation_id',
+            'id', 'etudiant_id', 'etudiant_nom',
+            'formation_id', 'formation_libelle',
             'annee_universitaire', 'type_inscription',
             'statut_inscription', 'numero_provisoire',
             'numero_matricule', 'date_preinscription',

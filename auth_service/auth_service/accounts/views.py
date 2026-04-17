@@ -1,11 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Q
 
 from .models import Utilisateur, Etudiant, Role, JournalAudit
 from .serializers import (
@@ -17,6 +19,7 @@ from .serializers import (
     UpdateProfilSerializer,
     JournalAuditSerializer,
     AssignerRoleSerializer,
+    EtudiantSerializer,
 )
 from .permissions import EstAdmin, EstEtudiant, EstAgentOuAdmin
 from .utils import tracer_action
@@ -431,3 +434,70 @@ class JournalAuditView(APIView):
             'count'  : total,
             'results': serializer.data,
         })
+
+
+class EtudiantDetailView(RetrieveAPIView):
+    queryset = Etudiant.objects.all()
+    serializer_class = EtudiantSerializer
+
+
+class EtudiantSearchView(APIView):
+    """
+    GET /api/auth/etudiants/search/?q=<terme>
+    Recherche d'étudiants par nom, prénom ou username.
+    Accessible aux agents et pédagogues (EstAgentOuAdmin).
+    """
+    permission_classes = [IsAuthenticated, EstAgentOuAdmin]
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response({'results': []})
+
+        qs = Utilisateur.objects.filter(
+            roles__libelle='etudiant'
+        ).filter(
+            Q(username__icontains=q) |
+            Q(etudiant__nom__icontains=q) |
+            Q(etudiant__prenom__icontains=q)
+        ).distinct()[:20]
+
+        results = []
+        for u in qs:
+            try:
+                nom_complet = u.etudiant.nom_complet
+            except Exception:
+                nom_complet = u.username
+            results.append({
+                'id'         : u.id,
+                'username'   : u.username,
+                'nom_complet': nom_complet,
+            })
+        return Response({'results': results})
+
+
+class EtudiantNomsView(APIView):
+    """
+    GET /api/auth/etudiants/noms/?ids=1,2,3
+    Retourne un dictionnaire {id: nom_complet} pour une liste d'IDs.
+    Accessible aux agents et pédagogues (EstAgentOuAdmin).
+    """
+    permission_classes = [IsAuthenticated, EstAgentOuAdmin]
+
+    def get(self, request):
+        ids_param = request.query_params.get('ids', '')
+        try:
+            ids = [int(i) for i in ids_param.split(',') if i.strip()]
+        except ValueError:
+            return Response({'error': 'Paramètre ids invalide.'}, status=400)
+        if not ids:
+            return Response({})
+
+        qs = Utilisateur.objects.filter(id__in=ids)
+        result = {}
+        for u in qs:
+            try:
+                result[u.id] = u.etudiant.nom_complet
+            except Exception:
+                result[u.id] = u.username
+        return Response(result)

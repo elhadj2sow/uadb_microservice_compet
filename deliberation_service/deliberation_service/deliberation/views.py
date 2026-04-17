@@ -119,6 +119,36 @@ class DeliberationDetailView(APIView):
         return Response(DeliberationSerializer(deliberation).data)
 
 
+class DemarrerDeliberationView(APIView):
+    """
+    POST /api/deliberations/{id}/demarrer/
+    Passe la délibération de 'en_preparation' à 'en_cours'.
+    Permet aux enseignants de commencer la saisie des notes.
+    Réservé au responsable pédagogique / admin.
+    """
+    permission_classes = [IsAuthenticated, EstResponsablePedagogique]
+
+    def post(self, request, pk):
+        deliberation = get_object_or_404(Deliberation, pk=pk)
+
+        if deliberation.statut != 'en_preparation':
+            return Response(
+                {'error': 'Seule une délibération «en préparation» peut être démarrée.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not deliberation.resultats.exists():
+            return Response(
+                {'error': 'Ajoutez au moins un étudiant avant de démarrer.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        deliberation.statut = 'en_cours'
+        deliberation.save(update_fields=['statut'])
+        logger.info(f"Délibération {deliberation.id} démarrée.")
+        return Response({'message': 'Délibération démarrée.', 'statut': 'en_cours'})
+
+
 class CloturerDeliberationView(APIView):
     """
     POST /api/deliberations/{id}/cloturer/
@@ -335,7 +365,7 @@ class ResultatDetailView(APIView):
         # L'étudiant ne voit que son propre résultat
         roles = getattr(request.user, 'roles', [])
         if 'etudiant' in roles:
-            if request.user.etudiant_id != resultat.etudiant_id:
+            if request.user.id != resultat.etudiant_id:
                 return Response(
                     {'error': 'Accès refusé.'},
                     status=status.HTTP_403_FORBIDDEN
@@ -382,7 +412,7 @@ class MesResultatsView(APIView):
 
     def get(self, request):
         resultats = Resultat.objects.filter(
-            etudiant_id=request.user.etudiant_id
+            etudiant_id=request.user.id
         ).select_related('deliberation').prefetch_related('notes').order_by(
             '-deliberation__annee_universitaire',
             'deliberation__semestre'
@@ -451,10 +481,22 @@ class SaisirNoteView(APIView):
         data   = serializer.validated_data
         ue_id  = data['ue_id']
 
-        # UE obligatoire dans le référentiel de la formation
-        ues = get_unites_formation(deliberation.formation_id)
+        # UE dans le référentiel de la formation (dossier_service)
+        ues    = get_unites_formation(deliberation.formation_id)
         ue_ref = next((u for u in ues if u.get('id') == ue_id), None)
-        if not ue_ref:
+
+        # Si dossier_service est injoignable, on utilise les données du payload
+        if not ue_ref and not ues:
+            ue_ref = {
+                'id'         : ue_id,
+                'code_ue'    : data.get('code_ue', ''),
+                'libelle_ue' : data.get('libelle_ue', ''),
+                'credit'     : data.get('credit_ue', 3),
+                'coefficient': float(data.get('coefficient_ue', 1.0)),
+                'semestre'   : data.get('semestre', 1),
+            }
+        elif not ue_ref:
+            # dossier_service répond mais l'UE n'est pas dans cette formation
             return Response(
                 {
                     'error': (
@@ -486,11 +528,11 @@ class SaisirNoteView(APIView):
             )
 
         # Conserver les métadonnées UE alignées sur le référentiel officiel
-        note.code_ue       = ue_ref.get('code_ue', note.code_ue)
-        note.libelle_ue    = ue_ref.get('libelle_ue', note.libelle_ue)
-        note.credit_ue     = ue_ref.get('credit', note.credit_ue)
+        note.code_ue        = ue_ref.get('code_ue', note.code_ue)
+        note.libelle_ue     = ue_ref.get('libelle_ue', note.libelle_ue)
+        note.credit_ue      = ue_ref.get('credit', note.credit_ue)
         note.coefficient_ue = ue_ref.get('coefficient', note.coefficient_ue)
-        note.semestre      = ue_ref.get('semestre', note.semestre)
+        note.semestre       = ue_ref.get('semestre', note.semestre)
 
         # Mettre à jour les valeurs
         note.note_cc         = data.get('note_cc')
@@ -615,7 +657,7 @@ class NotesEtudiantView(APIView):
         # Vérifier accès
         roles = getattr(request.user, 'roles', [])
         if ('etudiant' in roles
-                and request.user.etudiant_id != resultat.etudiant_id):
+                and request.user.id != resultat.etudiant_id):
             return Response(
                 {'error': 'Accès refusé.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -641,7 +683,7 @@ class StatistiquesDeliberationView(APIView):
     GET /api/deliberations/statistiques/
     Tableau de bord pour l'administration.
     """
-    permission_classes = [IsAuthenticated, EstAdmin]
+    permission_classes = [IsAuthenticated, EstJuryOuAdmin]
 
     def get(self, request):
         annee = request.query_params.get(

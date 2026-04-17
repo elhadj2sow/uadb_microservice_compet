@@ -11,8 +11,11 @@ from .views import (
     PaiementView,
     PayTechInitPaiementView,
     PayTechWebhookView,
+    PayTechConfirmerSuccessView,
     StatistiquesView,
     EtapesBloqueeView,
+    ReinscriptionEligibiliteView,
+    ReinscriptionView,
 )
 
 urlpatterns = [
@@ -37,6 +40,18 @@ urlpatterns = [
         'inscriptions/mes-inscriptions/',
         MesInscriptionsView.as_view(),
         name='mes-inscriptions'
+    ),
+
+    # ── Réinscription ─────────────────────────────────────
+    path(
+        'inscriptions/reinscription/eligibilite/',
+        ReinscriptionEligibiliteView.as_view(),
+        name='reinscription-eligibilite'
+    ),
+    path(
+        'inscriptions/reinscription/',
+        ReinscriptionView.as_view(),
+        name='reinscription'
     ),
 
     # ── Agents / Administration ───────────────────────────
@@ -81,6 +96,11 @@ urlpatterns = [
         'paiements/paytech/webhook/',
         PayTechWebhookView.as_view(),
         name='paiement-paytech-webhook'
+    ),
+    path(
+        'paiements/confirmer-success/',
+        PayTechConfirmerSuccessView.as_view(),
+        name='paiement-confirmer-success'
     ),
 
     # ── Usage interne (service IA) ────────────────────────
