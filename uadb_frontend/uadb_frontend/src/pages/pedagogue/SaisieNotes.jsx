@@ -4,14 +4,24 @@ import toast from 'react-hot-toast'
 import { Save, BookOpen, CheckCircle, AlertCircle, Users, GraduationCap, ClipboardList, Search, X } from 'lucide-react'
 
 // ── Calcul prévisualisation note ──────────────────────────────────────────────
-function calculerNote(cc, tp, ex) {
+function calculerNote(cc, tp, ex, rattrapage) {
   const parts = []
   let poids   = 0
   if (cc  !== '' && cc  != null) { parts.push(parseFloat(cc)  * 0.3); poids += 0.3 }
   if (tp  !== '' && tp  != null) { parts.push(parseFloat(tp)  * 0.2); poids += 0.2 }
   if (ex  !== '' && ex  != null) { parts.push(parseFloat(ex)  * 0.5); poids += 0.5 }
-  if (!parts.length || poids === 0) return null
-  return (parts.reduce((a, b) => a + b, 0) / poids).toFixed(2)
+
+  const noteNormale = (parts.length && poids > 0)
+    ? parts.reduce((a, b) => a + b, 0) / poids
+    : null
+
+  if (rattrapage !== '' && rattrapage != null) {
+    const r = parseFloat(rattrapage)
+    const base = noteNormale !== null ? Math.max(noteNormale, r) : r
+    return base.toFixed(2)
+  }
+
+  return noteNormale !== null ? noteNormale.toFixed(2) : null
 }
 
 // ── Composant principal ───────────────────────────────────────────────────────
@@ -192,7 +202,7 @@ export default function SaisieNotes() {
   }
 
   // ── Prévisualisation ──────────────────────────────────────────────────────
-  const noteCalc = calculerNote(form.note_cc, form.note_tp, form.note_examen)
+  const noteCalc = calculerNote(form.note_cc, form.note_tp, form.note_examen, form.note_rattrapage)
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

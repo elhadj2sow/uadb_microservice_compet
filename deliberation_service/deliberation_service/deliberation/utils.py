@@ -64,6 +64,26 @@ def get_unites_formation(formation_id):
         return []
 
 
+def get_etudiants_noms(ids):
+    """Retourne {id: nom_complet} depuis auth_service pour une liste d'IDs."""
+    if not ids:
+        return {}
+    try:
+        ids_str = ','.join(str(i) for i in ids)
+        res = requests.get(
+            f"{settings.SERVICE_AUTH}/api/auth/etudiants/noms/?ids={ids_str}",
+            headers=auth_header(),
+            timeout=5
+        )
+        if res.ok:
+            return {int(k): v for k, v in res.json().items()}
+        logger.warning(f"get_etudiants_noms : status={res.status_code}")
+        return {}
+    except Exception as e:
+        logger.warning(f"Impossible de récupérer les noms étudiants : {e}")
+        return {}
+
+
 def notifier_etudiant(etudiant_id, message, canal='email'):
     """Notifie un étudiant via le service notification."""
     try:

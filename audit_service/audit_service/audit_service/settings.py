@@ -106,5 +106,8 @@ SERVICE_AUTH = config('SERVICE_AUTH', default='http://localhost:8001')
 SERVICE_INTERNAL_USER     = config('SERVICE_INTERNAL_USER',     default='service_audit')
 SERVICE_INTERNAL_PASSWORD = config('SERVICE_INTERNAL_PASSWORD', default='secret')
 
+# Token partagé pour appels inter-services sans JWT utilisateur
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')
+
 # Rétention des logs
 RETENTION_JOURS = config('RETENTION_JOURS', default=365, cast=int)

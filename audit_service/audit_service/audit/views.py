@@ -1,10 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Count, Q
+from django.conf import settings
 import logging
 
 from .models import JournalAudit, StatistiqueAudit
@@ -29,18 +30,27 @@ class TracerActionView(APIView):
     POST /api/audit/tracer/
     Point d'entrée unique appelé par tous les microservices
     pour enregistrer une action dans le journal d'audit.
-
-    Exemples d'utilisation :
-    - Service auth : LOGIN, LOGOUT, CREATE utilisateur
-    - Service inscription : VALIDATE, REJECT, WORKFLOW_START
-    - Service dossier : UPLOAD pièce, VERIFY pièce
-    - Service délibération : SAISIR note, CLOTURER
-    - Service attestation : GENERATE, DOWNLOAD
-    - Service IA : DECISION_AUTO, ALERTE
+    Accepte soit un JWT utilisateur, soit le header X-Service-Token
+    pour les appels inter-services sans contexte utilisateur.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
+
+    def _is_authorized(self, request):
+        """Vérifie JWT utilisateur OU token service interne."""
+        # Token service interne (appels inter-microservices)
+        service_token = request.headers.get('X-Service-Token', '')
+        expected = getattr(settings, 'INTERNAL_SERVICE_TOKEN', '')
+        if expected and service_token == expected:
+            return True
+        # JWT utilisateur standard
+        return request.user and getattr(request.user, 'is_authenticated', False)
 
     def post(self, request):
+        if not self._is_authorized(request):
+            return Response(
+                {'detail': 'Authentification requise.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
         serializer = TracerActionSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(

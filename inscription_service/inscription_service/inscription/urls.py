@@ -16,6 +16,11 @@ from .views import (
     EtapesBloqueeView,
     ReinscriptionEligibiliteView,
     ReinscriptionView,
+    SituationBibliothequeView,
+    EmpruntLivreListView,
+    EmpruntLivreDetailView,
+    PenaliteListView,
+    PenaliteDetailView,
 )
 
 urlpatterns = [
@@ -108,5 +113,32 @@ urlpatterns = [
         'workflows/etapes-bloquees/',
         EtapesBloqueeView.as_view(),
         name='etapes-bloquees'
+    ),
+
+    # ── Bibliothèque ──────────────────────────────────────
+    path(
+        'bibliotheque/situation/<int:etudiant_id>/',
+        SituationBibliothequeView.as_view(),
+        name='bibliotheque-situation'
+    ),
+    path(
+        'bibliotheque/emprunts/',
+        EmpruntLivreListView.as_view(),
+        name='bibliotheque-emprunts'
+    ),
+    path(
+        'bibliotheque/emprunts/<int:pk>/',
+        EmpruntLivreDetailView.as_view(),
+        name='bibliotheque-emprunt-detail'
+    ),
+    path(
+        'bibliotheque/penalites/',
+        PenaliteListView.as_view(),
+        name='bibliotheque-penalites'
+    ),
+    path(
+        'bibliotheque/penalites/<int:pk>/',
+        PenaliteDetailView.as_view(),
+        name='bibliotheque-penalite-detail'
     ),
 ]

@@ -60,22 +60,76 @@ REPONSES_DEFAUT = {
     'salutation': (
         "Bonjour ! Je suis l'assistant virtuel de l'UADB. "
         "Je peux vous aider avec vos inscriptions, dossiers, "
-        "résultats et attestations. Comment puis-je vous aider ?"
+        "r\u00e9sultats et attestations. Comment puis-je vous aider ?"
     ),
     'aide': (
-        "Je suis disponible pour répondre à vos questions sur :\n"
-        "• Les inscriptions et réinscriptions\n"
-        "• La constitution de votre dossier\n"
-        "• Vos résultats de délibération\n"
-        "• Vos attestations et documents officiels\n"
-        "• Les paiements et frais de scolarité\n\n"
+        "Je suis disponible pour r\u00e9pondre \u00e0 vos questions sur :\n"
+        "\u2022 Les inscriptions et r\u00e9inscriptions\n"
+        "\u2022 La constitution de votre dossier\n"
+        "\u2022 Vos r\u00e9sultats de d\u00e9lib\u00e9ration\n"
+        "\u2022 Vos attestations et documents officiels\n"
+        "\u2022 Les paiements et frais de scolarit\u00e9\n\n"
         "Posez-moi votre question !"
+    ),
+    'inscription': (
+        "Pour vous inscrire \u00e0 l'UADB, suivez ces \u00e9tapes :\n"
+        "1. Cr\u00e9ez votre compte sur le portail \u00e9tudiant\n"
+        "2. Constituez votre dossier num\u00e9rique (pi\u00e8ces justificatives)\n"
+        "3. Soumettez votre demande de pr\u00e9inscription\n"
+        "4. Le circuit de validation d\u00e9marrera automatiquement\n"
+        "5. Suivez l'avancement sur votre tableau de bord\n"
+        "Le processus passe par 4 services : Scolarit\u00e9 \u2192 Comptabilit\u00e9 \u2192 M\u00e9dical \u2192 Biblioth\u00e8que."
+    ),
+    'deliberation': (
+        "Pour consulter vos r\u00e9sultats de d\u00e9lib\u00e9ration :\n"
+        "1. Connectez-vous \u00e0 votre espace \u00e9tudiant\n"
+        "2. Cliquez sur l'onglet \"R\u00e9sultats\"\n"
+        "3. S\u00e9lectionnez l'ann\u00e9e universitaire et la p\u00e9riode\n\n"
+        "Les notes sont disponibles apr\u00e8s validation par le jury.\n"
+        "En cas de rattrapage, vous serez notifi\u00e9 par email ou notification interne."
+    ),
+    'dossier': (
+        "Pour constituer votre dossier :\n"
+        "\u2022 Photo d'identit\u00e9 r\u00e9cente\n"
+        "\u2022 Copie de la carte d'identit\u00e9 ou passeport\n"
+        "\u2022 Relev\u00e9s de notes des ann\u00e9es pr\u00e9c\u00e9dentes\n"
+        "\u2022 Dipl\u00f4me ou attestation de r\u00e9ussite\n"
+        "\u2022 Certificat m\u00e9dical de moins de 3 mois\n\n"
+        "D\u00e9posez ces documents dans la section \"Mon Dossier\" de votre espace."
+    ),
+    'attestation': (
+        "Pour obtenir une attestation ou un certificat :\n"
+        "1. Connectez-vous \u00e0 votre espace \u00e9tudiant\n"
+        "2. Allez dans \"Attestations\"\n"
+        "3. S\u00e9lectionnez le type de document souhait\u00e9\n"
+        "4. Soumettez votre demande\n"
+        "5. T\u00e9l\u00e9chargez le PDF une fois g\u00e9n\u00e9r\u00e9 (notification envoy\u00e9e)"
+    ),
+    'paiement': (
+        "Pour les paiements des frais de scolarit\u00e9 :\n"
+        "\u2022 Orange Money : num\u00e9ro de paiement communiqu\u00e9 par la scolarit\u00e9\n"
+        "\u2022 Wave : m\u00eame num\u00e9ro\n"
+        "\u2022 Virement bancaire : coordonn\u00e9es disponibles \u00e0 la comptabilit\u00e9\n\n"
+        "Conservez votre re\u00e7u et t\u00e9l\u00e9chargez-le dans votre dossier."
+    ),
+    'calendrier': (
+        "Le calendrier universitaire est disponible sur le portail UADB.\n"
+        "Pour conna\u00eetre les dates exactes (inscriptions, examens, d\u00e9lib\u00e9rations), "
+        "consultez l'onglet Informations ou contactez la scolarit\u00e9."
+    ),
+    'contact': (
+        "Contacts de l'UADB :\n"
+        "\u2022 Scolarit\u00e9 : +221 33 971 00 00\n"
+        "\u2022 Email : scolarite@uadb.edu.sn\n"
+        "\u2022 Comptabilit\u00e9 : comptabilite@uadb.edu.sn\n"
+        "\u2022 Biblioth\u00e8que : bibliotheque@uadb.edu.sn\n"
+        "Horaires : Lundi-Vendredi 8h-17h"
     ),
     'defaut': (
         "Je n'ai pas bien compris votre question. "
         "Pouvez-vous la reformuler ? "
-        "Vous pouvez aussi contacter directement la scolarité "
-        "au +221 33 971 00 00 ou par email à scolarite@uadb.edu.sn."
+        "Vous pouvez aussi contacter directement la scolarit\u00e9 "
+        "au +221 33 971 00 00 ou par email \u00e0 scolarite@uadb.edu.sn."
     ),
 }
 
@@ -148,22 +202,25 @@ class MoteurChatbot:
             }
 
         # 2. Chercher dans la BaseConnaissance
-        resultat_bc = self._chercher_base_connaissance(texte_nettoye)
+        # Détecter l'intention d'abord pour guider la recherche
+        intention_detec = self._detecter_intention(texte_nettoye)
+        resultat_bc = self._chercher_base_connaissance(texte_nettoye, intention_detec)
         if resultat_bc:
             return resultat_bc
 
         # 3. Detecter l'intention generale (ML + fallback regles)
         intention, confiance = self._detecter_intention_ml(texte_nettoye)
         if not intention:
-            intention = self._detecter_intention(texte_nettoye)
+            intention = intention_detec
             confiance = 0.45 if intention else 0.0
 
         # 4. Réponse selon l'intention
-        if intention == 'aide':
+        reponse_defaut = REPONSES_DEFAUT.get(intention) if intention else None
+        if reponse_defaut:
             return {
-                'reponse'  : REPONSES_DEFAUT['aide'],
-                'intention': 'aide',
-                'confiance': round(max(confiance, 0.8), 2),
+                'reponse'  : reponse_defaut,
+                'intention': intention,
+                'confiance': round(max(confiance, 0.75), 2),
                 'source'   : 'defaut',
             }
 
@@ -279,10 +336,11 @@ class MoteurChatbot:
             logger.warning("Erreur classification NLTK: %s", exc)
             return None, 0.0
 
-    def _chercher_base_connaissance(self, texte):
+    def _chercher_base_connaissance(self, texte, intention_detec=None):
         """
         Cherche la meilleure réponse dans la BaseConnaissance.
-        Utilise la similarité de séquence et les mots-clés.
+        Utilise la similiarité de séquence et les mots-clés.
+        Priorise les entrées dont la catégorie correspond à l'intention détectée.
         """
         from .models import BaseConnaissance
 
@@ -295,6 +353,13 @@ class MoteurChatbot:
 
         for entree in entrees:
             score = self._calculer_score(texte, entree)
+
+            # Bonus si la catégorie correspond à l'intention détectée
+            if intention_detec and entree.categorie == intention_detec:
+                score += 0.25
+            # Pénalité si la catégorie est différente de l'intention détectée
+            elif intention_detec and entree.categorie != intention_detec:
+                score -= 0.10
 
             # Heuristique metier: si la question porte sur les pieces,
             # prioriser les entrees qui traitent explicitement des documents.
@@ -357,11 +422,11 @@ class MoteurChatbot:
         for mot_cle in entree.liste_mots_cles:
             mot_nettoye = self._nettoyer(mot_cle)
             if mot_nettoye in texte:
-                score_max = max(score_max, 0.6)
+                score_max = max(score_max, 0.80)
                 continue
 
             mot_tokens = set(self._normaliser_tokens(mot_nettoye))
             if mot_tokens and mot_tokens.intersection(texte_tokens):
-                score_max = max(score_max, 0.6)
+                score_max = max(score_max, 0.75)
 
         return score_max

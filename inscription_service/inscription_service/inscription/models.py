@@ -325,3 +325,121 @@ class EtapeWorkflow(models.Model):
 
     def __str__(self):
         return f"Étape {self.ordre} — {self.nom_etape} [{self.statut}]"
+
+
+class EmpruntLivre(models.Model):
+    """
+    Suivi des emprunts de livres par étudiant.
+    Utilisé par la bibliothèque pour bloquer ou valider l'étape 4 du workflow.
+    """
+    STATUT_CHOICES = [
+        ('emprunte', 'Emprunté'),
+        ('rendu',    'Rendu'),
+        ('perdu',    'Perdu'),
+    ]
+
+    etudiant_id           = models.IntegerField(
+        help_text="ID de l'étudiant dans le service auth"
+    )
+    numero_inventaire     = models.CharField(
+        max_length=50,
+        help_text="Numéro d'inventaire / code-barres du livre"
+    )
+    titre_livre           = models.CharField(max_length=255)
+    date_emprunt          = models.DateField()
+    date_retour_prevue    = models.DateField()
+    date_retour_effective = models.DateField(
+        null=True, blank=True,
+        help_text="Rempli quand le livre est rendu"
+    )
+    statut                = models.CharField(
+        max_length=20,
+        choices=STATUT_CHOICES,
+        default='emprunte',
+        help_text="emprunte = en sa possession, rendu = restitué, perdu = déclaré perdu"
+    )
+    note                  = models.TextField(
+        blank=True,
+        help_text="Observations de l'agent bibliothèque"
+    )
+    enregistre_par        = models.IntegerField(
+        null=True, blank=True,
+        help_text="ID de l'agent bibliothèque qui a enregistré l'emprunt"
+    )
+    date_creation         = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'inscription'
+        db_table  = 'emprunt_livre'
+        ordering  = ['-date_emprunt']
+
+    def __str__(self):
+        return (f"Emprunt étudiant {self.etudiant_id} — "
+                f"{self.titre_livre} [{self.statut}]")
+
+    @property
+    def est_en_retard(self):
+        from django.utils import timezone
+        if self.statut == 'rendu':
+            return False
+        return timezone.now().date() > self.date_retour_prevue
+
+
+class PenaliteBibliotheque(models.Model):
+    """
+    Pénalité liée à un emprunt (retard, détérioration, perte).
+    Une pénalité non payée bloque la validation bibliothèque.
+    """
+    MOTIF_CHOICES = [
+        ('retard',       'Retard de retour'),
+        ('deterioration','Détérioration'),
+        ('perte',        'Perte du livre'),
+    ]
+    STATUT_CHOICES = [
+        ('en_attente', 'En attente de paiement'),
+        ('payee',      'Payée'),
+        ('annulee',    'Annulée'),
+    ]
+
+    emprunt             = models.ForeignKey(
+        EmpruntLivre,
+        on_delete=models.CASCADE,
+        related_name='penalites'
+    )
+    etudiant_id         = models.IntegerField(
+        help_text="Dénormalisé pour requêtes rapides"
+    )
+    motif               = models.CharField(
+        max_length=20,
+        choices=MOTIF_CHOICES,
+        default='retard'
+    )
+    montant             = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=0
+    )
+    statut              = models.CharField(
+        max_length=20,
+        choices=STATUT_CHOICES,
+        default='en_attente'
+    )
+    date_creation       = models.DateTimeField(auto_now_add=True)
+    date_paiement       = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Date de paiement ou d'annulation"
+    )
+    enregistre_par      = models.IntegerField(
+        null=True, blank=True,
+        help_text="ID de l'agent bibliothèque"
+    )
+    observation         = models.TextField(blank=True)
+
+    class Meta:
+        app_label = 'inscription'
+        db_table  = 'penalite_bibliotheque'
+        ordering  = ['-date_creation']
+
+    def __str__(self):
+        return (f"Pénalité étudiant {self.etudiant_id} — "
+                f"{self.get_motif_display()} [{self.statut}]")

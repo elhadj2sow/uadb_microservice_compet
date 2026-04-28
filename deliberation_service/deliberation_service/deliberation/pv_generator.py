@@ -9,6 +9,7 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import logging
+from .utils import get_etudiants_noms
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,13 @@ def generer_pv_deliberation(deliberation):
                 styles['Normal']
             ))
         else:
+            # Récupérer les noms depuis auth_service
+            ids = list({r.etudiant_id for r in resultats})
+            noms_map = get_etudiants_noms(ids)
+
             # En-tête du tableau
             en_tete = [
-                'N°', 'ID Étudiant', 'Moy. Annuelle',
+                'N°', "Nom de l'étudiant", 'Moy. Annuelle',
                 'Crédits', 'Décision', 'Mention', 'Obs.'
             ]
             data = [en_tete]
@@ -93,9 +98,10 @@ def generer_pv_deliberation(deliberation):
                     f"{float(r.moyenne_annuelle):.2f}/20"
                     if r.moyenne_annuelle else '-'
                 )
+                nom = noms_map.get(r.etudiant_id, f"Étudiant #{r.etudiant_id}")
                 data.append([
                     str(i),
-                    str(r.etudiant_id),
+                    nom,
                     moy,
                     f"{r.credits_valides}/{r.credits_total}",
                     r.get_decision_display(),
@@ -104,8 +110,8 @@ def generer_pv_deliberation(deliberation):
                 ])
 
             col_widths = [
-                1.2*cm, 2.5*cm, 3.5*cm,
-                2.5*cm, 3.5*cm, 3.5*cm, 5*cm
+                1.2*cm, 5.5*cm, 3.0*cm,
+                2.5*cm, 3.0*cm, 3.0*cm, 4.5*cm
             ]
             table = Table(data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([

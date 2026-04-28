@@ -535,7 +535,7 @@ export default function MonInscription() {
                   {(() => {
                     const suivant    = niveauSuivant(niveauCourant)
                     const formSuiv   = formations.filter(f => f.niveau === suivant)
-                    const formAutres = formations.filter(f => f.niveau !== suivant)
+                    const formAutres = formations.filter(f => f.niveau !== suivant && NIVEAUX_ORDRE.indexOf(f.niveau) >= NIVEAUX_ORDRE.indexOf('L3'))
                     return (
                       <>
                         {formSuiv.length > 0 && (

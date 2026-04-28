@@ -16,9 +16,10 @@ import MesAttestations   from './pages/etudiant/MesAttestations'
 import MesNotifications  from './pages/etudiant/MesNotifications'
 
 // Pages agent
-import DashboardAgent    from './pages/agent/Dashboard'
-import GestionDossiers   from './pages/agent/GestionDossiers'
-import GestionInscriptions from './pages/agent/GestionInscriptions'
+import DashboardAgent       from './pages/agent/Dashboard'
+import GestionDossiers      from './pages/agent/GestionDossiers'
+import GestionInscriptions  from './pages/agent/GestionInscriptions'
+import GestionBibliotheque  from './pages/agent/GestionBibliotheque'
 
 // Pages pédagogue / enseignant
 import DashboardPedagogue    from './pages/pedagogue/Dashboard'
@@ -81,9 +82,10 @@ export default function App() {
           <Layout role="agent" />
         </ProtectedRoute>
       }>
-        <Route index               element={<DashboardAgent />} />
-        <Route path="dossiers"     element={<GestionDossiers />} />
-        <Route path="inscriptions" element={<GestionInscriptions />} />
+        <Route index                  element={<DashboardAgent />} />
+        <Route path="dossiers"        element={<GestionDossiers />} />
+        <Route path="inscriptions"    element={<GestionInscriptions />} />
+        <Route path="bibliotheque"    element={<GestionBibliotheque />} />
       </Route>
 
       {/* ── Pédagogue / Enseignant ── */}

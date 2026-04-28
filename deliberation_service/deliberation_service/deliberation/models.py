@@ -255,6 +255,7 @@ class Note(models.Model):
         Calcule la note finale de l'UE.
         CC=30%, TP=20%, Examen=50%.
         Si seulement examen : 100%.
+        Si note_rattrapage fournie : valeur_finale = max(note_normale, note_rattrapage).
         """
         parties = []
         poids_total = 0
@@ -269,10 +270,15 @@ class Note(models.Model):
             parties.append(float(self.note_examen) * 0.5)
             poids_total += 0.5
 
-        if not parties:
-            return None
+        note_normale = None
+        if parties and poids_total > 0:
+            note_normale = round(sum(parties) / poids_total, 2)
 
-        # Normaliser si poids < 1 (ex: seulement examen)
-        if poids_total > 0:
-            return round(sum(parties) / poids_total, 2)
-        return None
+        # Prendre la meilleure note entre session normale et rattrapage
+        if self.note_rattrapage is not None:
+            rattrapage = float(self.note_rattrapage)
+            if note_normale is not None:
+                return round(max(note_normale, rattrapage), 2)
+            return round(rattrapage, 2)
+
+        return note_normale

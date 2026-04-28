@@ -13,7 +13,8 @@ import logging
 from pathlib import Path
 
 from .models import (Inscription, Paiement,
-                     ValidationService, Workflow, EtapeWorkflow)
+                     ValidationService, Workflow, EtapeWorkflow,
+                     EmpruntLivre, PenaliteBibliotheque)
 from .serializers import (
     InscriptionSerializer, InscriptionListSerializer,
     PreinscriptionSerializer, ValiderEtapeSerializer,
@@ -22,6 +23,8 @@ from .serializers import (
     PayTechInitSerializer,
     PayTechWebhookSerializer,
     ValidationServiceSerializer,
+    EmpruntLivreSerializer, PenaliteBibliothequeSerializer,
+    SituationBibliothequeSerializer,
 )
 from .permissions import (
     EstEtudiant, EstAgentScolarite, EstAgentComptable,
@@ -772,6 +775,38 @@ class ValiderEtapeView(APIView):
             if paiement.montant_paye < paiement.montant:
                 return Response(
                     {'error': 'Le montant paye est insuffisant pour valider cette etape.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Pour l'étape bibliothèque, vérifier les emprunts non rendus et pénalités
+        if type_service == 'bibliotheque' and action == 'valider':
+            non_rendus = EmpruntLivre.objects.filter(
+                etudiant_id=inscription.etudiant_id,
+                statut='emprunte'
+            )
+            penalites = PenaliteBibliotheque.objects.filter(
+                etudiant_id=inscription.etudiant_id,
+                statut='en_attente'
+            )
+            if non_rendus.exists():
+                titres = ', '.join(
+                    f'«{e.titre_livre}»' for e in non_rendus[:3]
+                )
+                return Response(
+                    {'error': (
+                        f"L'étudiant a des livres non rendus : {titres}. "
+                        "Veuillez régulariser avant de valider."
+                    )},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if penalites.exists():
+                total = sum(p.montant for p in penalites)
+                return Response(
+                    {'error': (
+                        f"L'étudiant a {penalites.count()} pénalité(s) "
+                        f"impayée(s) pour un montant total de {total} FCFA. "
+                        "Veuillez régulariser avant de valider."
+                    )},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -1557,3 +1592,163 @@ class ReinscriptionView(APIView):
     def _annee_courante(self):
         y = timezone.now().year
         return f"{y}-{y + 1}"
+
+
+# ─────────────────────────────────────────────
+#  ENDPOINTS BIBLIOTHÈQUE
+# ─────────────────────────────────────────────
+
+class SituationBibliothequeView(APIView):
+    """
+    GET /api/bibliotheque/situation/{etudiant_id}/
+    Résumé de la situation bibliothèque d'un étudiant :
+    livres non rendus, pénalités impayées, et si l'étape peut être validée.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, etudiant_id):
+        roles = getattr(request.user, 'roles', [])
+        if ('etudiant' in roles
+                and getattr(request.user, 'etudiant_id', None) != etudiant_id):
+            return Response({'error': 'Accès refusé.'}, status=status.HTTP_403_FORBIDDEN)
+
+        non_rendus = EmpruntLivre.objects.filter(etudiant_id=etudiant_id, statut='emprunte')
+        penalites  = PenaliteBibliotheque.objects.filter(etudiant_id=etudiant_id, statut='en_attente')
+
+        peut_valider = not non_rendus.exists() and not penalites.exists()
+        motif = ''
+        if non_rendus.exists():
+            motif += f"{non_rendus.count()} livre(s) non rendu(s). "
+        if penalites.exists():
+            total = sum(p.montant for p in penalites)
+            motif += f"{penalites.count()} pénalité(s) impayée(s) — {total} FCFA."
+
+        data = SituationBibliothequeSerializer({
+            'etudiant_id'         : etudiant_id,
+            'livres_non_rendus'   : non_rendus,
+            'penalites_en_attente': penalites,
+            'peut_valider'        : peut_valider,
+            'motif_blocage'       : motif.strip(),
+        })
+        return Response(data.data)
+
+
+class EmpruntLivreListView(APIView):
+    """
+    GET  /api/bibliotheque/emprunts/?etudiant_id=X  → liste des emprunts
+    POST /api/bibliotheque/emprunts/                → enregistrer un emprunt
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_agent(self, request):
+        roles = getattr(request.user, 'roles', [])
+        return 'bibliotheque' in roles or 'admin' in roles
+
+    def get(self, request):
+        qs = EmpruntLivre.objects.all()
+        etudiant_id = request.query_params.get('etudiant_id')
+        statut      = request.query_params.get('statut')
+        if etudiant_id:
+            qs = qs.filter(etudiant_id=etudiant_id)
+        if statut:
+            qs = qs.filter(statut=statut)
+        return Response(EmpruntLivreSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not self._check_agent(request):
+            return Response({'error': 'Réservé à l\'agent bibliothèque.'}, status=status.HTTP_403_FORBIDDEN)
+        s = EmpruntLivreSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        emprunt = s.save(enregistre_par=request.user.id)
+        return Response(EmpruntLivreSerializer(emprunt).data, status=status.HTTP_201_CREATED)
+
+
+class EmpruntLivreDetailView(APIView):
+    """
+    GET   /api/bibliotheque/emprunts/{id}/  → détail
+    PATCH /api/bibliotheque/emprunts/{id}/  → marquer rendu / modifier
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_agent(self, request):
+        roles = getattr(request.user, 'roles', [])
+        return 'bibliotheque' in roles or 'admin' in roles
+
+    def get(self, request, pk):
+        emprunt = get_object_or_404(EmpruntLivre, pk=pk)
+        return Response(EmpruntLivreSerializer(emprunt).data)
+
+    def patch(self, request, pk):
+        if not self._check_agent(request):
+            return Response({'error': 'Réservé à l\'agent bibliothèque.'}, status=status.HTTP_403_FORBIDDEN)
+        emprunt = get_object_or_404(EmpruntLivre, pk=pk)
+        s = EmpruntLivreSerializer(emprunt, data=request.data, partial=True)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        emprunt = s.save()
+        # Si retourné, enregistrer la date effective automatiquement
+        if emprunt.statut == 'rendu' and not emprunt.date_retour_effective:
+            emprunt.date_retour_effective = timezone.now().date()
+            emprunt.save(update_fields=['date_retour_effective'])
+        return Response(EmpruntLivreSerializer(emprunt).data)
+
+
+class PenaliteListView(APIView):
+    """
+    GET  /api/bibliotheque/penalites/?etudiant_id=X  → liste des pénalités
+    POST /api/bibliotheque/penalites/                → créer une pénalité
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_agent(self, request):
+        roles = getattr(request.user, 'roles', [])
+        return 'bibliotheque' in roles or 'admin' in roles
+
+    def get(self, request):
+        qs = PenaliteBibliotheque.objects.all()
+        etudiant_id = request.query_params.get('etudiant_id')
+        statut      = request.query_params.get('statut')
+        if etudiant_id:
+            qs = qs.filter(etudiant_id=etudiant_id)
+        if statut:
+            qs = qs.filter(statut=statut)
+        return Response(PenaliteBibliothequeSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not self._check_agent(request):
+            return Response({'error': 'Réservé à l\'agent bibliothèque.'}, status=status.HTTP_403_FORBIDDEN)
+        s = PenaliteBibliothequeSerializer(data=request.data)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        penalite = s.save(enregistre_par=request.user.id)
+        return Response(PenaliteBibliothequeSerializer(penalite).data, status=status.HTTP_201_CREATED)
+
+
+class PenaliteDetailView(APIView):
+    """
+    GET   /api/bibliotheque/penalites/{id}/  → détail
+    PATCH /api/bibliotheque/penalites/{id}/  → marquer payée / annulée
+    """
+    permission_classes = [IsAuthenticated]
+
+    def _check_agent(self, request):
+        roles = getattr(request.user, 'roles', [])
+        return 'bibliotheque' in roles or 'admin' in roles
+
+    def get(self, request, pk):
+        p = get_object_or_404(PenaliteBibliotheque, pk=pk)
+        return Response(PenaliteBibliothequeSerializer(p).data)
+
+    def patch(self, request, pk):
+        if not self._check_agent(request):
+            return Response({'error': 'Réservé à l\'agent bibliothèque.'}, status=status.HTTP_403_FORBIDDEN)
+        penalite = get_object_or_404(PenaliteBibliotheque, pk=pk)
+        s = PenaliteBibliothequeSerializer(penalite, data=request.data, partial=True)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        penalite = s.save()
+        if penalite.statut == 'payee' and not penalite.date_paiement:
+            penalite.date_paiement = timezone.now()
+            penalite.save(update_fields=['date_paiement'])
+        return Response(PenaliteBibliothequeSerializer(penalite).data)

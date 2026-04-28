@@ -1,7 +1,8 @@
 from rest_framework import serializers
 import json
 from .models import (Inscription, Paiement,
-                     ValidationService, Workflow, EtapeWorkflow)
+                     ValidationService, Workflow, EtapeWorkflow,
+                     EmpruntLivre, PenaliteBibliotheque)
 
 
 class EtapeWorkflowSerializer(serializers.ModelSerializer):
@@ -269,3 +270,46 @@ class PayTechWebhookSerializer(serializers.Serializer):
         )
         data['status_resolu'] = status_resolu
         return data
+
+
+# ── Bibliothèque ──────────────────────────────────────────────────────────────
+
+class PenaliteBibliothequeSerializer(serializers.ModelSerializer):
+    motif_display  = serializers.CharField(source='get_motif_display',  read_only=True)
+    statut_display = serializers.CharField(source='get_statut_display', read_only=True)
+
+    class Meta:
+        model  = PenaliteBibliotheque
+        fields = [
+            'id', 'etudiant_id', 'emprunt',
+            'motif', 'motif_display',
+            'montant', 'statut', 'statut_display',
+            'date_creation', 'date_paiement', 'observation',
+            'enregistre_par',
+        ]
+        read_only_fields = ['date_creation', 'enregistre_par']
+
+
+class EmpruntLivreSerializer(serializers.ModelSerializer):
+    statut_display = serializers.CharField(source='get_statut_display', read_only=True)
+    est_en_retard  = serializers.BooleanField(read_only=True)
+    penalites      = PenaliteBibliothequeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model  = EmpruntLivre
+        fields = [
+            'id', 'etudiant_id', 'numero_inventaire', 'titre_livre',
+            'date_emprunt', 'date_retour_prevue', 'date_retour_effective',
+            'statut', 'statut_display', 'est_en_retard', 'note',
+            'enregistre_par', 'date_creation', 'penalites',
+        ]
+        read_only_fields = ['date_creation', 'enregistre_par']
+
+
+class SituationBibliothequeSerializer(serializers.Serializer):
+    """Résumé de la situation bibliothèque d'un étudiant."""
+    etudiant_id          = serializers.IntegerField()
+    livres_non_rendus    = EmpruntLivreSerializer(many=True)
+    penalites_en_attente = PenaliteBibliothequeSerializer(many=True)
+    peut_valider         = serializers.BooleanField()
+    motif_blocage        = serializers.CharField(allow_blank=True)

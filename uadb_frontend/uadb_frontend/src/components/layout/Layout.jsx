@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, FolderOpen, ClipboardList, BookOpen,
@@ -6,6 +7,7 @@ import {
   FileCheck, ChevronRight, BookMarked, BarChart2, Sliders
 } from 'lucide-react'
 import Chatbot from '../ui/Chatbot'
+import api, { BASE } from '../../config/api'
 
 const NAV = {
   etudiant: [
@@ -20,6 +22,7 @@ const NAV = {
     { label: 'Tableau de bord', icon: LayoutDashboard, to: '/agent' },
     { label: 'Dossiers',        icon: FolderOpen,      to: '/agent/dossiers' },
     { label: 'Inscriptions',    icon: ClipboardList,   to: '/agent/inscriptions' },
+    { label: 'Bibliothèque',    icon: BookMarked,      to: '/agent/bibliotheque' },
   ],
   admin: [
     { label: 'Tableau de bord', icon: LayoutDashboard, to: '/admin' },
@@ -37,6 +40,22 @@ export default function Layout({ role }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const nav = NAV[role] || []
+  const [nbNonLues, setNbNonLues] = useState(0)
+
+  useEffect(() => {
+    if (role !== 'etudiant') return
+    const charger = () => {
+      api.get(`${BASE.notification}/mes-notifications/`)
+        .then(r => {
+          // La vue retourne { count, non_lues, results }
+          setNbNonLues(r.data.non_lues || 0)
+        })
+        .catch(() => {})
+    }
+    charger()
+    const interval = setInterval(charger, 60000) // rafraîchir toutes les minutes
+    return () => clearInterval(interval)
+  }, [role])
 
   const handleLogout = async () => {
     await logout()
@@ -80,7 +99,7 @@ export default function Layout({ role }) {
             >
               <item.icon size={16} />
               {item.label}
-              {item.badge && <span className="nav-badge">3</span>}
+              {item.badge && nbNonLues > 0 && <span className="nav-badge">{nbNonLues}</span>}
             </NavLink>
           ))}
         </nav>

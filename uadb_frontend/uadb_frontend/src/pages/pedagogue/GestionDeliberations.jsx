@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext'
 import toast from 'react-hot-toast'
 import {
   Plus, BookOpen, Users, Lock, FileDown,
-  X, ChevronDown, ChevronUp, UserPlus, Hash, CreditCard, GraduationCap, Play
+  X, ChevronDown, ChevronUp, UserPlus, Hash, CreditCard, GraduationCap, Play,
+  Pencil, Trash2
 } from 'lucide-react'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -55,9 +56,12 @@ export default function GestionDeliberations() {
   const [modalCreate,  setModalCreate]  = useState(false)
   const [modalCloture, setModalCloture] = useState(null)
   const [modalAjout,   setModalAjout]   = useState(null)
+  const [modalEdit,    setModalEdit]    = useState(null)
+  const [modalDelete,  setModalDelete]  = useState(null)
 
   // ── Formulaires
   const [form,        setForm]        = useState(EMPTY_FORM)
+  const [formEdit,    setFormEdit]    = useState(EMPTY_FORM)
   const [formCloture, setFormCloture] = useState(EMPTY_CLOTURE)
   const [formAjout,   setFormAjout]   = useState(EMPTY_AJOUT)
 
@@ -187,6 +191,54 @@ export default function GestionDeliberations() {
       if (selected?.id === modalAjout.id) chargerResultats(selected)
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Cet étudiant est peut-être déjà dans la délibération.')
+    } finally { setSaving(false) }
+  }
+
+  // ── Modifier une délibération ────────────────────────────────────────────────
+  const ouvrirEdit = (delib) => {
+    setFormEdit({
+      session             : delib.session,
+      annee_universitaire : delib.annee_universitaire,
+      semestre            : delib.semestre,
+      niveau              : delib.niveau,
+      formation_id        : String(delib.formation_id),
+      date_deliberation   : delib.date_deliberation || '',
+    })
+    setModalEdit(delib)
+  }
+
+  const modifierDelib = async () => {
+    setSaving(true)
+    try {
+      await api.patch(`${BASE.deliberation}/${modalEdit.id}/`, {
+        ...formEdit,
+        formation_id : parseInt(formEdit.formation_id),
+        semestre     : parseInt(formEdit.semestre),
+      })
+      toast.success('Délibération modifiée avec succès !')
+      setModalEdit(null)
+      charger()
+      if (selected?.id === modalEdit.id) {
+        const r = await api.get(`${BASE.deliberation}/${modalEdit.id}/`)
+        setSelected(r.data)
+      }
+    } catch (e) {
+      const err = e.response?.data
+      toast.error(err?.error || err?.non_field_errors?.[0] || 'Erreur lors de la modification.')
+    } finally { setSaving(false) }
+  }
+
+  // ── Supprimer une délibération ───────────────────────────────────────────────
+  const supprimerDelib = async () => {
+    setSaving(true)
+    try {
+      await api.delete(`${BASE.deliberation}/${modalDelete.id}/`)
+      toast.success('Délibération supprimée.')
+      setModalDelete(null)
+      if (selected?.id === modalDelete.id) { setSelected(null); setResultats([]) }
+      charger()
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors de la suppression.')
     } finally { setSaving(false) }
   }
 
@@ -371,6 +423,26 @@ export default function GestionDeliberations() {
                           onClick={() => { setModalAjout(d); setFormAjout(EMPTY_AJOUT); resetNomSearch() }}
                         >
                           <Users size={13} />
+                        </button>
+                      )}
+                      {d.statut !== 'cloturee' && (
+                        <button
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Modifier"
+                          onClick={() => ouvrirEdit(d)}
+                          style={{ color: 'var(--blue)' }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                      {d.statut === 'en_preparation' && (
+                        <button
+                          className="btn btn-ghost btn-sm btn-icon"
+                          title="Supprimer"
+                          onClick={() => setModalDelete(d)}
+                          style={{ color: 'var(--danger)' }}
+                        >
+                          <Trash2 size={13} />
                         </button>
                       )}
                       {d.statut === 'en_preparation' && (
@@ -790,6 +862,111 @@ export default function GestionDeliberations() {
               <button className="btn btn-ghost" onClick={() => setModalAjout(null)}>Annuler</button>
               <button className="btn btn-primary" onClick={ajouterEtudiant} disabled={saving}>
                 {saving ? <div className="spinner" /> : <><UserPlus size={14} /> Ajouter l'étudiant</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL : Modifier délibération ── */}
+      {modalEdit && (
+        <div className="modal-overlay" onClick={() => setModalEdit(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title"><Pencil size={15} style={{ marginRight: 6, verticalAlign: 'middle' }} />Modifier la délibération</span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setModalEdit(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Session *</label>
+                  <select className="form-control" value={formEdit.session}
+                    onChange={e => setFormEdit(f => ({ ...f, session: e.target.value }))}>
+                    {SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Semestre *</label>
+                  <select className="form-control" value={formEdit.semestre}
+                    onChange={e => setFormEdit(f => ({ ...f, semestre: parseInt(e.target.value) }))}>
+                    {[1, 2, 3, 4].map(s => <option key={s} value={s}>Semestre {s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Niveau *</label>
+                  <select className="form-control" value={formEdit.niveau}
+                    onChange={e => setFormEdit(f => ({ ...f, niveau: e.target.value }))}>
+                    {NIVEAUX.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Année universitaire *</label>
+                  <input className="form-control" placeholder="ex: 2024-2025"
+                    value={formEdit.annee_universitaire}
+                    onChange={e => setFormEdit(f => ({ ...f, annee_universitaire: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Formation *</label>
+                <select className="form-control" value={formEdit.formation_id}
+                  onChange={e => setFormEdit(f => ({ ...f, formation_id: e.target.value }))}>
+                  <option value="">-- Choisir une formation --</option>
+                  {formations.map(f => (
+                    <option key={f.id} value={f.id}>{f.code_formation} — {f.libelle}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Date prévue de délibération</label>
+                <input className="form-control" type="date"
+                  value={formEdit.date_deliberation}
+                  onChange={e => setFormEdit(f => ({ ...f, date_deliberation: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModalEdit(null)}>Annuler</button>
+              <button className="btn btn-primary" onClick={modifierDelib} disabled={saving}>
+                {saving ? <div className="spinner" /> : <><Pencil size={14} /> Enregistrer</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL : Confirmer suppression ── */}
+      {modalDelete && (
+        <div className="modal-overlay" onClick={() => setModalDelete(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ color: 'var(--danger)' }}>
+                <Trash2 size={15} style={{ marginRight: 6, verticalAlign: 'middle' }} />
+                Supprimer la délibération
+              </span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setModalDelete(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{
+                padding: '12px 14px', borderRadius: 8, marginBottom: 16,
+                background: 'var(--danger-bg)', border: '1px solid #fecaca',
+                fontSize: 13, color: 'var(--danger)', lineHeight: 1.5,
+              }}>
+                ⚠️ Cette action est <strong>irréversible</strong>. La délibération et tous ses résultats seront définitivement supprimés.
+              </div>
+              <div style={{
+                padding: '10px 14px', borderRadius: 8,
+                background: 'var(--gray-50)', border: '1px solid var(--gray-200)',
+                fontSize: 12.5, color: 'var(--gray-600)',
+              }}>
+                <strong>S{modalDelete.semestre} — {modalDelete.niveau} — Session {modalDelete.session}</strong>
+                <br />{modalDelete.annee_universitaire} · Formation #{modalDelete.formation_id}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModalDelete(null)}>Annuler</button>
+              <button className="btn btn-danger" onClick={supprimerDelib} disabled={saving}>
+                {saving ? <div className="spinner" /> : <><Trash2 size={14} /> Supprimer définitivement</>}
               </button>
             </div>
           </div>

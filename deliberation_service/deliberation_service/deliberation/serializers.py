@@ -175,12 +175,13 @@ class DeliberationListSerializer(serializers.ModelSerializer):
 
 class CreerDeliberationSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Deliberation
-        fields = [
+        model      = Deliberation
+        fields     = [
             'session', 'annee_universitaire', 'semestre',
             'niveau', 'formation_id', 'jury_president_id',
             'date_deliberation', 'observation'
         ]
+        validators = []  # désactive UniqueTogetherValidator auto (géré dans validate())
 
     def validate_annee_universitaire(self, value):
         import re

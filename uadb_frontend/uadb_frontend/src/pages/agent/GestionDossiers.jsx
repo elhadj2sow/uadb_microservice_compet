@@ -43,7 +43,7 @@ export default function GestionDossiers() {
       setShowValiderEtape(false)
       setValiderEtapeObs('')
       setValiderEtapeId(null)
-      charger()
+      charger(search, etat)
     } catch {
       toast.error("Erreur lors de la validation de l'étape.")
     }
@@ -62,10 +62,12 @@ export default function GestionDossiers() {
     }
   }
 
-  const charger = async () => {
+  const charger = async (searchParam, etatParam) => {
+    const s = searchParam !== undefined ? searchParam : search
+    const e = etatParam   !== undefined ? etatParam   : etat
     setLoading(true)
     try {
-      const r = await api.get(`${BASE.dossier}/liste/?etat=${etat}&etudiant_id=${search}`)
+      const r = await api.get(`${BASE.dossier}/liste/?etat=${e}&etudiant_id=${s}`)
       const dossiersData = r.data.results || []
       // Enrichir avec noms d'étudiants si la liste n'est pas trop grande
       const enrichis = dossiersData.length <= 100 
@@ -76,14 +78,14 @@ export default function GestionDossiers() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { charger() }, [etat])
+  useEffect(() => { charger(search, etat) }, [etat, search])
 
   const validerDossier = async (id, etat_dossier, observation='') => {
     try {
       await api.patch(`${BASE.dossier}/${id}/`, { etat_dossier, observation })
       toast.success(`Dossier ${etat_dossier === 'valide' ? 'validé' : 'rejeté'} !`)
       setSelected(null)
-      charger()
+      charger(search, etat)
     } catch { toast.error('Erreur lors de la mise à jour.') }
   }
 
@@ -102,12 +104,12 @@ export default function GestionDossiers() {
           <div style={{flex:1,minWidth:200,position:'relative'}}>
             <Search size={15} style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--gray-300)'}}/>
             <input className="form-control" placeholder="ID étudiant..." style={{paddingLeft:36}}
-              value={search} onChange={e=>{setSearch(e.target.value);charger()}} />
+              value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <select className="form-control" style={{width:'auto'}} value={etat} onChange={e=>setEtat(e.target.value)}>
             {ETATS.map(e => <option key={e} value={e}>{e || 'Tous les états'}</option>)}
           </select>
-          <button className="btn btn-ghost" onClick={charger}><Filter size={15}/> Filtrer</button>
+          <button className="btn btn-ghost" onClick={() => charger(search, etat)}><Filter size={15}/> Filtrer</button>
         </div>
       </div>
 

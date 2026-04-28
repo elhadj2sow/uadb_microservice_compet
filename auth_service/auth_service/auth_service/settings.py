@@ -118,3 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
      'OPTIONS': {'min_length': 8}},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
+
+# Service audit centralisé
+AUDIT_SERVICE_URL      = config('AUDIT_SERVICE_URL',      default='http://localhost:8008')
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')

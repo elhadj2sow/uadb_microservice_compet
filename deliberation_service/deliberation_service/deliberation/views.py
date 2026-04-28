@@ -118,6 +118,22 @@ class DeliberationDetailView(APIView):
         serializer.save()
         return Response(DeliberationSerializer(deliberation).data)
 
+    def delete(self, request, pk):
+        deliberation = get_object_or_404(Deliberation, pk=pk)
+        roles = getattr(request.user, 'roles', [])
+        if 'responsable_pedagogique' not in roles and 'admin' not in roles:
+            return Response(
+                {'error': 'Réservé aux responsables pédagogiques.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if deliberation.statut != 'en_preparation':
+            return Response(
+                {'error': 'Seules les délibérations en préparation peuvent être supprimées.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        deliberation.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class DemarrerDeliberationView(APIView):
     """

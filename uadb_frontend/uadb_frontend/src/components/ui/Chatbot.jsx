@@ -148,8 +148,8 @@ export default function Chatbot() {
         {open ? <X size={22}/> : <MessageSquare size={22}/>}
       </button>
 
-      {/* Badge non-lu */}
-      {!open && (
+      {/* Badge non-lu — uniquement si le chat n'a jamais été ouvert */}
+      {!open && messages.length === 0 && (
         <span style={{
           position:'absolute', top:-4, right:-4,
           background:'var(--red)', color:'white',
@@ -157,7 +157,7 @@ export default function Chatbot() {
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:10, fontWeight:700,
           boxShadow:'0 0 0 2px white',
-        }}>1</span>
+        }}>!</span>
       )}
     </div>
   )

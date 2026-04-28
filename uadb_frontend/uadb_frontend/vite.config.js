@@ -11,6 +11,7 @@ export default defineConfig({
       '/api/auth'          : { target: 'http://localhost:8001', changeOrigin: true },
       '/api/inscriptions'  : { target: 'http://localhost:8002', changeOrigin: true },
       '/api/paiements'     : { target: 'http://localhost:8002', changeOrigin: true },
+      '/api/bibliotheque'  : { target: 'http://localhost:8002', changeOrigin: true },
       '/api/formations'    : { target: 'http://localhost:8003', changeOrigin: true },
       '/api/dossiers'      : { target: 'http://localhost:8003', changeOrigin: true },
       '/api/pieces'        : { target: 'http://localhost:8003', changeOrigin: true },

@@ -56,7 +56,7 @@ export default function GestionInscriptions() {
       charger()
       setSelected(null)
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Erreur.')
+      toast.error(e.response?.data?.error || e.response?.data?.detail || e.response?.data?.non_field_errors?.[0] || 'Erreur lors de la validation.')
     } finally { setValidating(false); setEtapeAction(null); setObservation("") }
   }
 
@@ -68,8 +68,10 @@ export default function GestionInscriptions() {
       let etudiant_nom = insc.etudiant_nom
       if (!etudiant_nom) {
         try {
-          const r2 = await api.get(`${BASE.auth}/utilisateurs/${insc.etudiant_id}/`)
-          etudiant_nom = r2.data.username || r2.data.email
+          const r2 = await api.get(`${BASE.auth}/etudiants/${insc.etudiant_id}/`)
+          etudiant_nom = r2.data.prenom && r2.data.nom
+            ? `${r2.data.prenom} ${r2.data.nom}`
+            : `Étudiant #${insc.etudiant_id}`
         } catch {}
       }
       setSelected({ ...r.data, etudiant_nom })
@@ -292,7 +294,7 @@ export default function GestionInscriptions() {
                           </div>
                         )}
                       </div>
-                      {(serviceConnecte && (etape.statut === 'en_cours' || etape.statut === 'en_attente') && etape.service === serviceConnecte) && (
+                      {(serviceConnecte && etape.statut === 'en_cours' && etape.service === serviceConnecte) && (
                         <div style={{display:'flex',gap:6,marginTop:8}}>
                           <button className="btn btn-sm"
                             style={{background:'var(--success-bg)',color:'var(--success)',border:'1px solid var(--success)'}}

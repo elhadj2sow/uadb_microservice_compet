@@ -14,14 +14,18 @@ export default function MesNotifications() {
   }, [])
 
   const marquerToutesLues = async () => {
-    await api.post(`${BASE.notification}/tout-lire/`)
-    setNotifs(n => n.map(x => ({ ...x, statut_envoi: 'lu', date_lecture: new Date() })))
-    toast.success('Toutes les notifications marquées comme lues.')
+    try {
+      await api.post(`${BASE.notification}/tout-lire/`)
+      setNotifs(n => n.map(x => ({ ...x, statut_envoi: 'lu', date_lecture: new Date() })))
+      toast.success('Toutes les notifications marquées comme lues.')
+    } catch { toast.error('Erreur lors de la mise à jour.') }
   }
 
   const marquerLue = async id => {
-    await api.patch(`${BASE.notification}/${id}/lire/`)
-    setNotifs(n => n.map(x => x.id === id ? { ...x, statut_envoi: 'lu' } : x))
+    try {
+      await api.patch(`${BASE.notification}/${id}/lire/`)
+      setNotifs(n => n.map(x => x.id === id ? { ...x, statut_envoi: 'lu' } : x))
+    } catch { /* silencieux — pas bloquant */ }
   }
 
   const nonLues = notifs.filter(n => n.statut_envoi === 'envoye').length
