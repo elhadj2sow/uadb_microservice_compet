@@ -1,0 +1,43 @@
+@startuml DS_03_Inscription
+skinparam sequenceArrowThickness 2
+skinparam responseMessageBelowArrow true
+
+actor "Étudiant"          as ETU
+participant "Interface Web" as FE
+participant "Service Inscription" as INS
+participant "Service IA"   as IA
+participant "Service Notification" as NOT
+
+ETU -> FE : Remplit et soumet le formulaire de préinscription
+FE -> INS : Transmet la demande d'inscription
+
+INS -> IA : Vérifie l'éligibilité de l'étudiant
+IA --> INS : Éligible (aucun blocage détecté)
+
+INS -> INS : Crée le dossier d'inscription\navec numéro provisoire
+INS -> NOT : Notifie l'étudiant (dossier reçu + N° provisoire)
+INS --> FE : Inscription enregistrée
+FE --> ETU : Affiche numéro provisoire et étapes à suivre
+
+== Étape 1 — Bibliothèque ==
+actor "Bibliothécaire" as BIB
+BIB -> INS : Valide l'étape bibliothèque
+INS -> NOT : Notifie l'étudiant (étape validée)
+
+== Étape 2 — Service Médical ==
+actor "Service Médical" as MED
+MED -> INS : Valide l'étape médicale
+INS -> NOT : Notifie l'étudiant
+
+== Étape 3 — Comptabilité ==
+actor "Agent Comptable" as CPT
+CPT -> INS : Valide le paiement des frais
+INS -> NOT : Notifie l'étudiant
+
+== Étape 4 — Scolarité (validation finale) ==
+actor "Agent Scolarité" as SCO
+SCO -> INS : Valide définitivement le dossier
+INS -> INS : Attribue le matricule définitif
+INS -> NOT : Notifie l'étudiant\n(inscription validée + matricule)
+INS --> SCO : Confirmation avec matricule
+@enduml

@@ -109,13 +109,21 @@ class SoumettreDemandeView(APIView):
                 status=status.HTTP_409_CONFLICT
             )
 
-        # Créer la demande
-        demande = DemandeAttestation.objects.create(
+        # Réutiliser une demande en_attente existante (pipeline précédent échoué)
+        demande = DemandeAttestation.objects.filter(
             etudiant_id         = request.user.etudiant_id,
             type_attestation    = type_att,
             annee_universitaire = annee,
-            motif               = serializer.validated_data.get('motif', ''),
-        )
+            statut              = 'en_attente',
+        ).first()
+
+        if not demande:
+            demande = DemandeAttestation.objects.create(
+                etudiant_id         = request.user.etudiant_id,
+                type_attestation    = type_att,
+                annee_universitaire = annee,
+                motif               = serializer.validated_data.get('motif', ''),
+            )
 
         # Lancer le pipeline automatique
         service     = AttestationService()

@@ -1,0 +1,51 @@
+@startuml DCU_05_Attestation
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+actor "Étudiant"         as ETU
+actor "Administrateur"   as ADM
+actor "Public / Tiers"   as PUB
+actor "Système"          as SYS <<system>>
+
+rectangle "attestation_service — Attestations & Documents" {
+  usecase "Soumettre demande d'attestation"    as UC01
+  usecase "Consulter état de sa demande"       as UC02
+  usecase "Télécharger le PDF généré"          as UC03
+  usecase "Régénérer un PDF"                   as UC04
+
+  usecase "Vérifier authenticité (code QR)"   as UC05
+
+  usecase "Consulter toutes les demandes"      as UC06
+  usecase "Gérer les demandes en attente"      as UC07
+
+  usecase "Évaluer éligibilité (moteur IA)"    as UC08
+  usecase "Générer le PDF (ReportLab)"         as UC09
+  usecase "Stocker sur MinIO"                  as UC10
+  usecase "Notifier disponibilité"             as UC11
+  usecase "Enregistrer audit"                  as UC12
+}
+
+ETU --> UC01
+ETU --> UC02
+ETU --> UC03
+ETU --> UC04
+
+PUB --> UC05
+
+ADM --> UC06
+ADM --> UC07
+
+SYS --> UC08
+SYS --> UC09
+SYS --> UC10
+SYS --> UC11
+SYS --> UC12
+
+UC01 ..> UC08 : <<include>>
+UC08 ..> UC09 : <<extend>>
+UC09 ..> UC10 : <<include>>
+UC09 ..> UC11 : <<include>>
+UC01 ..> UC12 : <<include>>
+UC03 ..> UC12 : <<include>>
+@enduml

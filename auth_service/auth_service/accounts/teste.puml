@@ -1,0 +1,38 @@
+@startuml MCD_01_Auth
+skinparam linetype ortho
+skinparam classBackgroundColor #FEFEFE
+
+entity "Utilisateur" as USR {
+  * id
+  --
+  username
+  password (hashé)
+  email
+  prénom
+  nom
+  état_compte
+  date_création
+}
+
+entity "Rôle" as ROL {
+  * id
+  --
+  libellé
+}
+
+entity "Étudiant" as ETU {
+  * id
+  --
+  matricule
+  INE
+  code_permanent
+  date_naissance
+  sexe
+  téléphone
+  adresse
+  nationalité
+}
+
+USR }o--o{ ROL : possède
+ETU ||--|| USR : est un
+@enduml

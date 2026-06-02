@@ -1,0 +1,62 @@
+@startuml DCU_03_Dossier
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+actor "Étudiant"         as ETU
+actor "Agent Scolarité"  as SCO
+actor "Équipe Pédagogique" as PED
+actor "Administrateur"   as ADM
+actor "Système"          as SYS <<system>>
+
+rectangle "dossier_service — Gestion des Dossiers & Formations" {
+  usecase "Créer son dossier étudiant"         as UC01
+  usecase "Déposer une pièce justificative"    as UC02
+  usecase "Consulter état de son dossier"      as UC03
+  usecase "Consulter score de complétude"      as UC04
+  usecase "Consulter motifs de rejet"          as UC05
+
+  usecase "Vérifier pièce justificative"       as UC06
+  usecase "Valider une pièce"                  as UC07
+  usecase "Rejeter une pièce avec motif"       as UC08
+  usecase "Consulter dossiers étudiants"       as UC09
+
+  usecase "Consulter référentiel formations"   as UC10
+  usecase "Consulter Unités d'Enseignement"    as UC11
+  usecase "Créer / modifier une formation"     as UC12
+  usecase "Créer / modifier une UE"            as UC13
+
+  usecase "Calculer score complétude"          as UC14
+  usecase "Notifier pièce rejetée"             as UC15
+  usecase "Enregistrer audit"                  as UC16
+}
+
+ETU --> UC01
+ETU --> UC02
+ETU --> UC03
+ETU --> UC04
+ETU --> UC05
+ETU --> UC10
+
+SCO --> UC06
+SCO --> UC07
+SCO --> UC08
+SCO --> UC09
+
+PED --> UC10
+PED --> UC11
+
+ADM --> UC12
+ADM --> UC13
+ADM --> UC09
+
+SYS --> UC14
+SYS --> UC15
+SYS --> UC16
+
+UC02 ..> UC14 : <<include>>
+UC07 ..> UC14 : <<include>>
+UC08 ..> UC15 : <<include>>
+UC08 ..> UC16 : <<include>>
+UC07 ..> UC16 : <<include>>
+@enduml

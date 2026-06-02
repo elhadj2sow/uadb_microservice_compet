@@ -82,17 +82,31 @@ export default function MesNotifications() {
                   {TYPE_ICON[n.type_notification] || '🔔'}
                 </div>
                 <div style={{flex:1}}>
+                  {n.sujet && (
+                    <div style={{
+                      fontSize:13, fontWeight:700,
+                      color:'var(--gray-900)', lineHeight:1.4, marginBottom:2
+                    }}>
+                      {n.sujet}
+                    </div>
+                  )}
                   <div style={{
-                    fontSize:14, fontWeight: n.statut_envoi==='envoye' ? 600 : 500,
-                    color:'var(--gray-800)', lineHeight:1.4
+                    fontSize:13, fontWeight: n.statut_envoi==='envoye' ? 500 : 400,
+                    color:'var(--gray-700)', lineHeight:1.5
                   }}>
                     {n.message}
                   </div>
-                  <div style={{fontSize:12,color:'var(--gray-400)',marginTop:4,display:'flex',gap:12}}>
+                  <div style={{fontSize:11,color:'var(--gray-400)',marginTop:5,display:'flex',gap:12,flexWrap:'wrap'}}>
                     <span>{new Date(n.date_notification).toLocaleString('fr-FR')}</span>
                     <span className={`badge badge-${n.canal==='email'?'info':'navy'}`} style={{fontSize:10}}>
                       {n.canal}
                     </span>
+                    {n.emetteur_service && (
+                      <span style={{fontSize:10,color:'var(--gray-400)'}}>via {n.emetteur_service}</span>
+                    )}
+                    {n.date_lecture && (
+                      <span style={{fontSize:10,color:'var(--gray-300)'}}>Lu le {new Date(n.date_lecture).toLocaleString('fr-FR')}</span>
+                    )}
                   </div>
                 </div>
                 {n.statut_envoi === 'envoye' && (

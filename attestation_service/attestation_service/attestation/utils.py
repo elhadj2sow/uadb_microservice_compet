@@ -1,12 +1,20 @@
+import time
 import requests
 import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# Cache du token interne : évite un login HTTP à chaque appel inter-service
+_token_cache = {'token': '', 'expires_at': 0.0}
+
 
 def get_internal_token():
-    """Token JWT pour les appels inter-services."""
+    """Token JWT pour les appels inter-services (mis en cache 25 min)."""
+    now = time.time()
+    if _token_cache['token'] and now < _token_cache['expires_at']:
+        return _token_cache['token']
+
     try:
         res = requests.post(
             f"{settings.SERVICE_AUTH}/api/auth/login/",
@@ -16,10 +24,16 @@ def get_internal_token():
             },
             timeout=5
         )
-        return res.json().get('access', '')
+        token = res.json().get('access', '')
+        if token:
+            # JWT valide 30 min → on cache 25 min pour être sûr
+            _token_cache['token']      = token
+            _token_cache['expires_at'] = now + 25 * 60
+        return token
     except Exception as e:
         logger.warning(f"Token interne non obtenu : {e}")
-        return ''
+        # Retourner le token en cache même s'il est peut-être expiré
+        return _token_cache.get('token', '')
 
 
 def auth_header():

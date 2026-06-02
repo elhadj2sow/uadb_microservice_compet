@@ -1,4 +1,5 @@
 import io
+import math
 import uuid
 import qrcode
 import logging
@@ -8,10 +9,13 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer,
     Table, TableStyle, Image, HRFlowable
+)
+from reportlab.graphics.shapes import (
+    Drawing, Circle, String, Group, Line, Rect, Polygon, Path, PolyLine
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +48,225 @@ def generer_qr_code(code_verification):
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
+
+
+def creer_cachet_uadb(diametre_cm=5.0):
+    """
+    Cachet rond officiel UADB — fidèle au tampon physique :
+    - « UNIVERSITE ALIOUNE DIOP » arc supérieur bien espacé
+    - « DIRECTION DE LA SCOLARITE » arc inférieur bien espacé
+    - « LE DIRECTEUR » centré avec étoiles et lignes
+    - Rouge encre tampon, bande annulaire large et lisible
+    """
+    pts   = diametre_cm * cm
+    cx    = cy = pts / 2
+    rouge = colors.HexColor('#cc0000')
+
+    # Bande annulaire généreuse : ~0.65cm de hauteur
+    r_ext = pts / 2 - 2.5          # bord externe (laisser marge trait)
+    r_int = r_ext - 18.5           # bord interne → bande ~0.65cm
+    r_txt = (r_ext + r_int) / 2    # axe central des lettres
+
+    d = Drawing(pts, pts)
+
+    # ── Cercles ──
+    d.add(Circle(cx, cy, r_ext,
+                 fillColor=colors.white, strokeColor=rouge, strokeWidth=3.0))
+    d.add(Circle(cx, cy, r_int,
+                 fillColor=None,        strokeColor=rouge, strokeWidth=1.4))
+
+    def _arc_texte(texte, span_deg, debut_deg, sens, fsize=8.0):
+        """
+        Pose chaque caractère centré sur son point d'arc.
+        sens=-1 → arc supérieur (tops vers l'extérieur, lecture normale)
+        sens=+1 → arc inférieur (tops vers l'intérieur, lecture normale)
+        """
+        n   = len(texte)
+        pas = span_deg / max(n - 1, 1)
+        for i, ch in enumerate(texte):
+            ang    = math.radians(debut_deg + sens * i * pas)
+            x      = cx + r_txt * math.cos(ang)
+            y      = cy + r_txt * math.sin(ang)
+            rot    = math.degrees(ang) - (90 if sens == -1 else -90)
+            cr, sr = math.cos(math.radians(rot)), math.sin(math.radians(rot))
+            g = Group(String(0, 0, ch,
+                             fontSize=fsize, fontName='Helvetica-Bold',
+                             fillColor=rouge, textAnchor='middle'))
+            g.transform = (cr, sr, -sr, cr, x, y)
+            d.add(g)
+
+    # Arc supérieur : « UNIVERSITE ALIOUNE DIOP » (22 chars) sur 165°
+    # debut = 90 + 165/2 = 172.5°, fin ≈ 7.5°
+    _arc_texte("UNIVERSITE ALIOUNE DIOP",
+               span_deg=165, debut_deg=172.5, sens=-1, fsize=8.0)
+
+    # Arc inférieur : « DIRECTION DE LA SCOLARITE » (25 chars) sur 168°
+    # debut = -90 - 168/2 = -174°, fin ≈ -6°
+    _arc_texte("DIRECTION DE LA SCOLARITE",
+               span_deg=168, debut_deg=-174.0, sens=+1, fsize=7.8)
+
+    # ── Étoiles séparatrices gauche (186°) et droite (354°) ──
+    for ang_deg in (186, 354):
+        ang = math.radians(ang_deg)
+        sx  = cx + r_txt * math.cos(ang)
+        sy  = cy + r_txt * math.sin(ang)
+        d.add(String(sx, sy - 3.5, '*',
+                     fontSize=8, fontName='Helvetica-Bold',
+                     fillColor=rouge, textAnchor='middle'))
+
+    # ── Texte central : LE DIRECTEUR entre deux lignes ──
+    lw = r_int * 0.80
+    d.add(Line(cx - lw, cy + 11, cx + lw, cy + 11,
+               strokeColor=rouge, strokeWidth=1.0))
+    d.add(String(cx, cy + 2, 'LE DIRECTEUR',
+                 fontSize=10, fontName='Helvetica-Bold',
+                 fillColor=rouge, textAnchor='middle'))
+    d.add(Line(cx - lw, cy - 5, cx + lw, cy - 5,
+               strokeColor=rouge, strokeWidth=1.0))
+
+    return d
+
+
+def creer_signature_manuscrite(largeur_cm=3.8, hauteur_cm=1.8):
+    """
+    Signature cursive simulée par courbes de Bézier — style encre bleue.
+    Produit une signature réaliste avec grande boucle, corps ondulant
+    et trait de soulignement.
+    """
+    w    = largeur_cm * cm
+    h    = hauteur_cm * cm
+    d    = Drawing(w, h)
+    bleu = colors.HexColor('#1a1a8c')
+
+    def s(px, py):
+        """Convertit coordonnées 0-100 / 0-60 vers pts réels."""
+        return px * w / 100, py * h / 60
+
+    # ── Trait 1 : grande boucle montante (lettre capitale) ──
+    p1 = Path(strokeColor=bleu, strokeWidth=1.6, fillColor=None,
+              strokeLineCap=1, strokeLineJoin=1)
+    p1.moveTo(*s(3, 26))
+    p1.curveTo(*s(1, 42), *s(9, 56), *s(17, 50))
+    p1.curveTo(*s(25, 44), *s(19, 28), *s(27, 32))
+    d.add(p1)
+
+    # ── Trait 2 : corps central ondulant (lettres du milieu) ──
+    p2 = Path(strokeColor=bleu, strokeWidth=1.4, fillColor=None,
+              strokeLineCap=1, strokeLineJoin=1)
+    p2.moveTo(*s(24, 34))
+    p2.curveTo(*s(32, 42), *s(30, 20), *s(40, 28))
+    p2.curveTo(*s(48, 34), *s(46, 18), *s(56, 26))
+    p2.curveTo(*s(62, 32), *s(60, 44), *s(69, 36))
+    p2.curveTo(*s(75, 30), *s(72, 18), *s(81, 24))
+    p2.curveTo(*s(88, 30), *s(90, 40), *s(96, 32))
+    d.add(p2)
+
+    # ── Trait 3 : soulignement principal ──
+    p3 = Path(strokeColor=bleu, strokeWidth=1.3, fillColor=None,
+              strokeLineCap=1)
+    p3.moveTo(*s(4, 13))
+    p3.curveTo(*s(22, 17), *s(52, 10), *s(80, 15))
+    p3.curveTo(*s(88, 17), *s(94, 13), *s(98, 11))
+    d.add(p3)
+
+    # ── Trait 4 : second soulignement léger ──
+    p4 = Path(strokeColor=bleu, strokeWidth=0.7, fillColor=None,
+              strokeLineCap=1)
+    p4.moveTo(*s(10, 6))
+    p4.curveTo(*s(28, 8), *s(58, 3), *s(84, 7))
+    d.add(p4)
+
+    return d
+
+
+def _creer_icone_check():
+    """
+    Icône coche (✓) dessinée vectoriellement en blanc.
+    Utilisée dans le bloc de signature numérique.
+    """
+    size = 36
+    d    = Drawing(size, size)
+    # Coche : segment court bas-gauche → pointe basse, puis long vers haut-droite
+    d.add(PolyLine(
+        [size * 0.15, size * 0.52,
+         size * 0.38, size * 0.24,
+         size * 0.85, size * 0.72],
+        strokeColor=colors.white,
+        strokeWidth=3.5,
+        strokeLineCap=1,
+        strokeLineJoin=1,
+    ))
+    return d
+
+
+def creer_bloc_signature_numerique(attestation, styles):
+    """
+    Bloc de signature numérique professionnel.
+    Bande bleue marine gauche avec icône + zone d'information bleu clair.
+    """
+    now            = timezone.now()
+    date_signature = now.strftime('%d/%m/%Y à %H:%M:%S')
+    bleu_marine    = colors.HexColor('#003580')
+    bleu_clair     = colors.HexColor('#e8f0fb')
+    bleu_texte     = colors.HexColor('#003580')
+    vert_valide    = colors.HexColor('#1a7a3a')
+
+    s_titre = ParagraphStyle(
+        'sn_titre2', parent=styles['Normal'],
+        fontSize=9.5, fontName='Helvetica-Bold',
+        textColor=bleu_texte, spaceAfter=3, leading=13,
+    )
+    s_info = ParagraphStyle(
+        'sn_info2', parent=styles['Normal'],
+        fontSize=8.5, textColor=colors.HexColor('#1a1a2e'),
+        leading=12, spaceAfter=1,
+    )
+    s_valide = ParagraphStyle(
+        'sn_valide2', parent=styles['Normal'],
+        fontSize=8.5, fontName='Helvetica-Bold',
+        textColor=vert_valide, leading=13, spaceBefore=2,
+    )
+
+    # Colonne gauche : icône coche
+    icone_drawing = _creer_icone_check()
+
+    # Colonne droite : informations
+    info_rows = [
+        [Paragraph('Document signé numériquement', s_titre)],
+        [Paragraph('Signé par : <b>Chef de la Scolarité</b>', s_info)],
+        [Paragraph('Université Alioune Diop de Bambey (UADB)', s_info)],
+        [Paragraph(f'Date de signature : {date_signature}', s_info)],
+        [Paragraph('✔  Signature numérique valide', s_valide)],
+    ]
+    info_inner = Table(info_rows, colWidths=[11.2 * cm])
+    info_inner.setStyle(TableStyle([
+        ('TOPPADDING',    (0, 0), (-1, -1), 1),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+    ]))
+
+    bloc = Table(
+        [[icone_drawing, info_inner]],
+        colWidths=[1.6 * cm, 11.2 * cm],
+    )
+    bloc.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (0, 0), bleu_marine),
+        ('BACKGROUND',    (1, 0), (1, 0), bleu_clair),
+        ('BOX',           (0, 0), (-1, -1), 1.2, bleu_marine),
+        ('LINEAFTER',     (0, 0), (0, 0),   0.8, bleu_marine),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN',         (0, 0), (0, 0),   'CENTER'),
+        ('TOPPADDING',    (0, 0), (0, 0),   10),
+        ('BOTTOMPADDING', (0, 0), (0, 0),   10),
+        ('LEFTPADDING',   (0, 0), (0, 0),   4),
+        ('RIGHTPADDING',  (0, 0), (0, 0),   4),
+        ('TOPPADDING',    (1, 0), (1, 0),   8),
+        ('BOTTOMPADDING', (1, 0), (1, 0),   8),
+        ('LEFTPADDING',   (1, 0), (1, 0),   10),
+        ('RIGHTPADDING',  (1, 0), (1, 0),   8),
+    ]))
+    return bloc
 
 
 def generer_pdf_attestation(
@@ -284,44 +507,70 @@ def generer_pdf_attestation(
         ))
         elements.append(Spacer(1, 0.8 * cm))
 
-        # ── Date et lieu ──────────────────────────────────
-        date_gen = timezone.now().strftime('%d/%m/%Y')
-        elements.append(Paragraph(
-            f"Bambey, le {date_gen}",
-            ParagraphStyle(
-                'date', parent=styles['Normal'],
-                fontSize=11, alignment=TA_LEFT
-            )
-        ))
-        elements.append(Spacer(1, 1 * cm))
-
-        # ── Signature + QR code (côte à côte) ────────────
-        qr_buf = generer_qr_code(str(attestation.code_verification))
-        qr_img = Image(qr_buf, width=3 * cm, height=3 * cm)
-
-        sig_data = [[
-            Paragraph(
-                "<b>Le Recteur</b><br/><br/><br/><br/>"
-                "Signature et cachet",
-                ParagraphStyle(
-                    'sig', parent=styles['Normal'],
-                    fontSize=10, alignment=TA_CENTER
-                )
-            ),
-            qr_img,
-        ]]
-        sig_table = Table(
-            sig_data,
-            colWidths=[9 * cm, 5 * cm]
+        # ── Ligne date / titre signataire ─────────────────
+        s_date_g = ParagraphStyle(
+            'date_g', parent=styles['Normal'],
+            fontSize=10, alignment=TA_LEFT,
         )
-        sig_table.setStyle(TableStyle([
-            ('ALIGN',      (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        s_titre_d = ParagraphStyle(
+            'titre_d', parent=styles['Normal'],
+            fontSize=10, alignment=TA_RIGHT,
+        )
+        date_gen = timezone.now().strftime('%d/%m/%Y')
+        row_date = Table(
+            [[Paragraph(f"Bambey, le {date_gen}", s_date_g),
+              Paragraph("<b>Le Directeur de la Scolarité</b>", s_titre_d)]],
+            colWidths=[7 * cm, 7 * cm],
+        )
+        row_date.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
-        elements.append(sig_table)
+        elements.append(row_date)
+        elements.append(Spacer(1, 0.3 * cm))
 
+        # ── Signature manuscrite + Cachet + QR code ──────
+        qr_buf    = generer_qr_code(str(attestation.code_verification))
+        qr_img    = Image(qr_buf, width=3.0 * cm, height=3.0 * cm)
+        cachet    = creer_cachet_uadb(5.0)
+        signature = creer_signature_manuscrite(3.8, 1.8)
+
+        s_nom_dir = ParagraphStyle(
+            'nom_dir', parent=styles['Normal'],
+            fontSize=9, fontName='Helvetica-Bold',
+            alignment=TA_CENTER, textColor=colors.HexColor('#1a1a2e'),
+        )
+        nom_directeur_cell = Table(
+            [[cachet], [Paragraph('M. AZIZ DIOUF', s_nom_dir)]],
+            colWidths=[5.0 * cm],
+        )
+        nom_directeur_cell.setStyle(TableStyle([
+            ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING',   (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 1),
+        ]))
+
+        row_stamp = Table(
+            [[signature, nom_directeur_cell, qr_img]],
+            colWidths=[4.5 * cm, 5.0 * cm, 4.5 * cm],
+        )
+        row_stamp.setStyle(TableStyle([
+            ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
+            ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING',   (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+        ]))
+        elements.append(row_stamp)
         elements.append(Spacer(1, 0.5 * cm))
+
+        # ── Bloc signature numérique ──────────────────────
+        bloc_sig = creer_bloc_signature_numerique(attestation, styles)
+        elements.append(bloc_sig)
+
+        elements.append(Spacer(1, 0.4 * cm))
         elements.append(HRFlowable(
             width='100%', thickness=0.5,
             color=colors.grey
@@ -330,11 +579,9 @@ def generer_pdf_attestation(
 
         # ── Pied de page ──────────────────────────────────
         elements.append(Paragraph(
-            f"Document généré électroniquement — "
-            f"Code de vérification : "
-            f"<b>{str(attestation.code_verification)[:16].upper()}</b> — "
-            f"Vérifiez l'authenticité sur : "
-            f"{settings.PORTAIL_URL}/verifier/",
+            "Ce document n'a pas \xe9t\xe9 modifi\xe9 depuis sa signature. "
+            "Vous pouvez v\xe9rifier cette attestation en scannant le QR code "
+            f"ou en visitant : {settings.PORTAIL_URL}/verifier/",
             s_ref
         ))
 
@@ -540,35 +787,64 @@ def generer_pdf_releve_notes(
         elements.append(synthese_table)
 
         elements.append(Spacer(1, 1 * cm))
-        date_gen = timezone.now().strftime('%d/%m/%Y')
-        elements.append(Paragraph(
-            f"Bambey, le {date_gen}",
-            ParagraphStyle(
-                'date', parent=styles['Normal'],
-                fontSize=10, alignment=TA_LEFT
-            )
-        ))
-        elements.append(Spacer(1, 0.8 * cm))
 
-        # Signature + QR
-        qr_buf = generer_qr_code(str(attestation.code_verification))
-        qr_img = Image(qr_buf, width=3 * cm, height=3 * cm)
-        sig_data = [[
-            Paragraph(
-                "<b>Le Chef de la Scolarité</b><br/><br/><br/>Signature",
-                ParagraphStyle(
-                    'sig', parent=styles['Normal'],
-                    fontSize=10, alignment=TA_CENTER
-                )
-            ),
-            qr_img,
-        ]]
-        sig_table = Table(sig_data, colWidths=[10 * cm, 5 * cm])
-        sig_table.setStyle(TableStyle([
-            ('ALIGN',  (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # ── Ligne date / titre signataire ─────────────────
+        date_gen = timezone.now().strftime('%d/%m/%Y')
+        s_dg = ParagraphStyle('dg_rn', parent=styles['Normal'],
+                              fontSize=10, alignment=TA_LEFT)
+        s_dr = ParagraphStyle('dr_rn', parent=styles['Normal'],
+                              fontSize=10, alignment=TA_RIGHT)
+        row_date_rn = Table(
+            [[Paragraph(f"Bambey, le {date_gen}", s_dg),
+              Paragraph("<b>Le Chef de la Scolart\xe9</b>", s_dr)]],
+            colWidths=[7 * cm, 9 * cm],
+        )
+        row_date_rn.setStyle(TableStyle([
+            ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
+            ('TOPPADDING',   (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
         ]))
-        elements.append(sig_table)
+        elements.append(row_date_rn)
+        elements.append(Spacer(1, 0.3 * cm))
+
+        # ── Signature manuscrite + Cachet + QR code ──────
+        qr_buf    = generer_qr_code(str(attestation.code_verification))
+        qr_img    = Image(qr_buf, width=3.0 * cm, height=3.0 * cm)
+        cachet    = creer_cachet_uadb(3.6)
+        signature = creer_signature_manuscrite(3.8, 1.8)
+
+        row_stamp_rn = Table(
+            [[Paragraph(''), signature, cachet, qr_img]],
+            colWidths=[3.0 * cm, 4.0 * cm, 4.5 * cm, 4.5 * cm],
+        )
+        row_stamp_rn.setStyle(TableStyle([
+            ('VALIGN',       (0, 0), (-1, -1), 'BOTTOM'),
+            ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING',   (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+        ]))
+        elements.append(row_stamp_rn)
+        elements.append(Spacer(1, 0.5 * cm))
+
+        # ── Bloc signature numérique ──────────────────────
+        bloc_sig = creer_bloc_signature_numerique(attestation, styles)
+        elements.append(bloc_sig)
+
+        elements.append(Spacer(1, 0.4 * cm))
+        elements.append(HRFlowable(width='100%', thickness=0.5, color=colors.grey))
+        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(Paragraph(
+            "Ce document n'a pas \xe9t\xe9 modifi\xe9 depuis sa signature. "
+            "Vous pouvez v\xe9rifier cette attestation en scannant le QR code "
+            f"ou en visitant : {settings.PORTAIL_URL}/verifier/",
+            ParagraphStyle(
+                'pied_rn', parent=styles['Normal'],
+                fontSize=7, alignment=TA_CENTER,
+                textColor=colors.grey,
+            ),
+        ))
 
         doc.build(elements)
         buffer.seek(0)

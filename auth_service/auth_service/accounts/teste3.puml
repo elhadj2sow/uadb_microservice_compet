@@ -1,0 +1,60 @@
+@startuml DCU_04_Deliberation
+left to right direction
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+
+actor "Étudiant"           as ETU
+actor "Équipe Pédagogique" as PED
+actor "Administrateur"     as ADM
+actor "Système"            as SYS <<system>>
+
+rectangle "deliberation_service — Délibération & Notes" {
+  usecase "Consulter ses résultats"            as UC01
+  usecase "Consulter ses notes par UE"         as UC02
+
+  usecase "Créer une session de délibération"  as UC03
+  usecase "Démarrer la session"                as UC04
+  usecase "Saisir notes CC et examen"          as UC05
+  usecase "Saisir notes en masse (bulk)"       as UC06
+  usecase "Consulter résultats calculés"       as UC07
+  usecase "Clôturer la délibération"           as UC08
+  usecase "Générer le procès-verbal (PV)"      as UC09
+
+  usecase "Lister toutes les délibérations"    as UC10
+  usecase "Consulter statistiques globales"    as UC11
+
+  usecase "Calculer note finale UE"            as UC12
+  usecase "Calculer moyennes pondérées"        as UC13
+  usecase "Appliquer règles IA"                as UC14
+  usecase "Notifier étudiants (résultats)"     as UC15
+  usecase "Enregistrer audit"                  as UC16
+}
+
+ETU --> UC01
+ETU --> UC02
+
+PED --> UC03
+PED --> UC04
+PED --> UC05
+PED --> UC06
+PED --> UC07
+PED --> UC08
+PED --> UC09
+
+ADM --> UC10
+ADM --> UC11
+ADM --> UC08
+
+SYS --> UC12
+SYS --> UC13
+SYS --> UC14
+SYS --> UC15
+SYS --> UC16
+
+UC05 ..> UC12 : <<include>>
+UC12 ..> UC13 : <<include>>
+UC08 ..> UC14 : <<include>>
+UC08 ..> UC15 : <<include>>
+UC08 ..> UC16 : <<include>>
+UC08 ..> UC09 : <<include>>
+@enduml

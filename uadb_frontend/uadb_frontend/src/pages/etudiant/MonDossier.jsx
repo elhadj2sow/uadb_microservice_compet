@@ -88,7 +88,17 @@ export default function MonDossier() {
       toast.success('Pièce supprimée.')
       const r = await api.get(`${BASE.dossier}/mon-dossier/?annee=${annee}`)
       setDossier(r.data)
-    } catch { toast.error('Impossible de supprimer cette pièce.') }
+    } catch (e) {
+      const msg = e.response?.data?.error
+        || e.response?.data?.detail
+        || 'Impossible de supprimer cette pièce.'
+      toast.error(msg)
+      // Synchronise avec l'état réel du serveur (pièce peut-être déjà remplacée)
+      try {
+        const r = await api.get(`${BASE.dossier}/mon-dossier/?annee=${annee}`)
+        setDossier(r.data)
+      } catch {}
+    }
   }
 
   if (loading) return (
