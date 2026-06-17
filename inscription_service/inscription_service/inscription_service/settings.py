@@ -132,3 +132,7 @@ PAYTECH_WEBHOOK_URL = config(
     'PAYTECH_WEBHOOK_URL',
     default='http://localhost:8002/api/paiements/paytech/webhook/'
 )
+
+# -- Service audit centralise ------------------------------------------
+AUDIT_SERVICE_URL      = config('AUDIT_SERVICE_URL',      default='http://localhost:8008')
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')

@@ -27,9 +27,12 @@ import GestionDeliberations  from './pages/pedagogue/GestionDeliberations'
 import SaisieNotes           from './pages/pedagogue/SaisieNotes'
 
 // Pages admin
-import DashboardAdmin    from './pages/admin/Dashboard'
-import GestionRegles     from './pages/admin/GestionRegles'
-import JournalAudit      from './pages/admin/JournalAudit'
+import DashboardAdmin       from './pages/admin/Dashboard'
+import GestionRegles        from './pages/admin/GestionRegles'
+import JournalAudit         from './pages/admin/JournalAudit'
+import GestionUtilisateurs  from './pages/admin/GestionUtilisateurs'
+import GestionFormations    from './pages/admin/GestionFormations'
+import NotificationsAdmin   from './pages/admin/NotificationsAdmin'
 
 // Pages paiement (accessibles sans rôle, après redirection PayTech)
 import PaiementSuccess from './pages/PaiementSuccess'
@@ -105,9 +108,12 @@ export default function App() {
           <Layout role="admin" />
         </ProtectedRoute>
       }>
-        <Route index          element={<DashboardAdmin />} />
-        <Route path="regles"  element={<GestionRegles />} />
-        <Route path="audit"   element={<JournalAudit />} />
+        <Route index                  element={<DashboardAdmin />} />
+        <Route path="regles"           element={<GestionRegles />} />
+        <Route path="audit"            element={<JournalAudit />} />
+        <Route path="utilisateurs"     element={<GestionUtilisateurs />} />
+        <Route path="formations"       element={<GestionFormations />} />
+        <Route path="notifications"    element={<NotificationsAdmin />} />
       </Route>
 
       {/* ── Pages paiement PayTech (sans auth requise) ── */}

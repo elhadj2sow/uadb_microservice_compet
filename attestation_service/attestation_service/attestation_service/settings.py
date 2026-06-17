@@ -123,3 +123,7 @@ SERVICE_INTERNAL_PASSWORD = config('SERVICE_INTERNAL_PASSWORD', default='service
 
 # ── URL publique pour QR codes ────────────────────────────
 PORTAIL_URL = config('PORTAIL_URL', default='https://uadb.edu.sn')
+
+# -- Service audit centralise ------------------------------------------
+AUDIT_SERVICE_URL      = config('AUDIT_SERVICE_URL',      default='http://localhost:8008')
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')

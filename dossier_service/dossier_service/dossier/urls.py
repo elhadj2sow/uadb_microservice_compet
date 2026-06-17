@@ -5,6 +5,8 @@ from .views import (
     FormationDetailView,
     FormationCreateView,
     UniteEnseignementListView,
+    UECreateView,
+    UEDetailView,
     # Dossiers
     CreerDossierView,
     MonDossierView,
@@ -48,6 +50,21 @@ urlpatterns = [
         'formations/<int:pk>/ues/',
         UniteEnseignementListView.as_view(),
         name='formation-ues'
+    ),
+    path(
+        'formations/<int:pk>/ues/creer/',
+        UECreateView.as_view(),
+        name='formation-ue-creer'
+    ),
+    path(
+        'formations/<int:pk>/ues/<int:ue_pk>/modifier/',
+        UEDetailView.as_view(),
+        name='formation-ue-modifier'
+    ),
+    path(
+        'formations/<int:pk>/ues/<int:ue_pk>/supprimer/',
+        UEDetailView.as_view(),
+        name='formation-ue-supprimer'
     ),
 
     # ── Dossiers — Étudiant ───────────────────────────────

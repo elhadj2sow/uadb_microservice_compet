@@ -1,5 +1,6 @@
 import threading
 import logging
+
 try:
     import requests as _requests
 except ImportError:
@@ -7,7 +8,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# URL du service audit centralisé (configurée dans .env)
 try:
     from django.conf import settings as _settings
     _AUDIT_URL   = getattr(_settings, 'AUDIT_SERVICE_URL',   'http://localhost:8008')
@@ -32,7 +32,7 @@ def _envoyer_audit(payload):
         logger.debug('Audit non disponible: %s', exc)
 
 
-def tracer_action(request, action, ressource, details=None, utilisateur=None, statut='succes', niveau='INFO'):
+def tracer_action(request, action, ressource, details=None, utilisateur=None):
     """
     Enregistre une action dans le journal d'audit centralisé.
     L'envoi se fait en arrière-plan (thread) pour ne pas bloquer la réponse.
@@ -40,23 +40,22 @@ def tracer_action(request, action, ressource, details=None, utilisateur=None, st
     user = utilisateur or (
         request.user if hasattr(request, 'user') and request.user.is_authenticated else None
     )
+    roles = getattr(user, 'roles', []) if user else []
+    role_acteur = roles[0] if roles else ''
+
     payload = {
         'action'        : action,
-        'service'       : 'auth',
+        'service'       : 'notification',
         'ressource'     : ressource,
-        'acteur'        : user.username if user else 'anonyme',
-        'utilisateur_id': user.pk if user else None,
-        'role_acteur'   : (
-            list(user.roles.values_list('libelle', flat=True))[0]
-            if user and hasattr(user, 'roles') and user.roles.exists()
-            else ''
-        ),
+        'acteur'        : getattr(user, 'username', 'anonyme') if user else 'anonyme',
+        'utilisateur_id': getattr(user, 'id', None) if user else None,
+        'role_acteur'   : role_acteur,
         'adresse_ip'    : get_client_ip(request),
         'methode_http'  : request.method,
         'url'           : request.path,
         'details'       : details or {},
-        'niveau'        : niveau,
-        'statut'        : statut,
+        'niveau'        : 'INFO',
+        'statut'        : 'succes',
     }
     threading.Thread(target=_envoyer_audit, args=(payload,), daemon=True).start()
 

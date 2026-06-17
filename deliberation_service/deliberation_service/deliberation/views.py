@@ -23,6 +23,7 @@ from .utils import (
     notifier_etudiant,
     get_unites_formation,
     appeler_moteur_regles,
+    tracer_action,
 )
 from .pv_generator import generer_pv_deliberation
 
@@ -83,6 +84,12 @@ class DeliberationListView(APIView):
             )
         deliberation = serializer.save()
         logger.info(f"Délibération {deliberation.id} créée.")
+        tracer_action(request, 'CREATE', f'deliberation/{deliberation.id}', details={
+            'annee_universitaire': deliberation.annee_universitaire,
+            'formation_id'       : deliberation.formation_id,
+            'semestre'           : deliberation.semestre,
+            'session'            : deliberation.session,
+        })
         return Response(
             DeliberationSerializer(deliberation).data,
             status=status.HTTP_201_CREATED
@@ -116,6 +123,7 @@ class DeliberationDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         serializer.save()
+        tracer_action(request, 'UPDATE', f'deliberation/{pk}', details=request.data)
         return Response(DeliberationSerializer(deliberation).data)
 
     def delete(self, request, pk):
@@ -131,7 +139,13 @@ class DeliberationDetailView(APIView):
                 {'error': 'Seules les délibérations en préparation peuvent être supprimées.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        annee_univ = deliberation.annee_universitaire
+        formation_id = deliberation.formation_id
         deliberation.delete()
+        tracer_action(request, 'DELETE', f'deliberation/{pk}', details={
+            'annee_universitaire': annee_univ,
+            'formation_id'       : formation_id,
+        })
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -162,6 +176,11 @@ class DemarrerDeliberationView(APIView):
         deliberation.statut = 'en_cours'
         deliberation.save(update_fields=['statut'])
         logger.info(f"Délibération {deliberation.id} démarrée.")
+        tracer_action(request, 'WORKFLOW_START', f'deliberation/{pk}', details={
+            'annee_universitaire': deliberation.annee_universitaire,
+            'formation_id'       : deliberation.formation_id,
+            'semestre'           : deliberation.semestre,
+        })
         return Response({'message': 'Délibération démarrée.', 'statut': 'en_cours'})
 
 
@@ -253,6 +272,11 @@ class CloturerDeliberationView(APIView):
             f"Délibération {pk} clôturée — "
             f"{deliberation.resultats.count()} résultats"
         )
+        tracer_action(request, 'WORKFLOW_END', f'deliberation/{pk}', details={
+            'annee_universitaire': deliberation.annee_universitaire,
+            'formation_id'       : deliberation.formation_id,
+            'nb_resultats'       : deliberation.resultats.count(),
+        })
         return Response({
             'message'    : 'Délibération clôturée avec succès.',
             'deliberation': DeliberationSerializer(deliberation).data,
@@ -362,6 +386,10 @@ class ResultatListView(APIView):
             inscription_id = inscription_id,
             credits_total  = request.data.get('credits_total', 60),
         )
+        tracer_action(request, 'CREATE', f'deliberation/{pk}/resultat/{resultat.id}', details={
+            'etudiant_id'  : etudiant_id,
+            'inscription_id': inscription_id,
+        })
         return Response(
             ResultatSerializer(resultat).data,
             status=status.HTTP_201_CREATED
@@ -415,6 +443,12 @@ class ResultatDetailView(APIView):
         resultat.valide_par      = request.user.id
         resultat.date_validation = timezone.now()
         resultat.save()
+
+        tracer_action(request, 'VALIDATE', f'resultat/{pk}', details={
+            'decision'   : resultat.decision,
+            'mention'    : resultat.mention,
+            'etudiant_id': resultat.etudiant_id,
+        })
 
         return Response(ResultatSerializer(resultat).data)
 
@@ -560,6 +594,19 @@ class SaisirNoteView(APIView):
         note.save()
         # → signal recalculer_moyenne() déclenché automatiquement
 
+        tracer_action(
+            request,
+            'CREATE' if created else 'UPDATE',
+            f'resultat/{pk}/note/{note.id}',
+            details={
+                'ue_id'    : ue_id,
+                'code_ue'  : note.code_ue,
+                'note_cc'  : note.note_cc,
+                'note_examen': note.note_examen,
+                'etudiant_id': resultat.etudiant_id,
+            }
+        )
+
         action = "créée" if created else "mise à jour"
         return Response(
             {
@@ -653,6 +700,12 @@ class SaisirNotesBulkView(APIView):
                     'erreur'     : str(e)
                 })
 
+        tracer_action(request, 'CREATE', f'deliberation/{pk}/notes/bulk', details={
+            'nb_traitees'   : nb_traitees,
+            'nb_erreurs'    : len(erreurs),
+            'formation_id'  : deliberation.formation_id,
+            'annee'         : deliberation.annee_universitaire,
+        })
         return Response({
             'message'    : f"{nb_traitees} notes saisies.",
             'nb_traitees': nb_traitees,

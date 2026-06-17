@@ -16,6 +16,7 @@ from .serializers import (
 from .permissions import EstEtudiant, EstAgentOuAdmin, EstAdmin
 from .services import NotificationService
 from .chatbot import MoteurChatbot
+from .utils import tracer_action
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,13 @@ class EnvoyerNotificationView(APIView):
             deliberation_id      = data.get('deliberation_id'),
             attestation_id       = data.get('attestation_id'),
         )
+
+        tracer_action(request, 'CREATE', f'notification/{notif.id}', details={
+            'canal'           : data.get('canal', 'email'),
+            'type_notification': data.get('type_notification', 'systeme'),
+            'etudiant_id'     : data.get('etudiant_id'),
+            'emetteur_service': data.get('emetteur_service', ''),
+        })
 
         return Response(
             {

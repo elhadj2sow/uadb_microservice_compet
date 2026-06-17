@@ -15,6 +15,7 @@ from .serializers import (
 )
 from .permissions import EstAdmin, EstAgentOuAdmin
 from .services import dispatcher
+from .utils import tracer_action
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,12 @@ class EvaluerView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        tracer_action(request, 'DECISION_AUTO', f'ia/evaluer/{type_eval}', details={
+            'type_eval'  : type_eval,
+            'etudiant'   : data.get('etudiant'),
+            'decision'   : resultat.get('decision') or resultat.get('eligible'),
+        })
+
         return Response(resultat, status=status.HTTP_200_OK)
 
 
@@ -105,6 +112,10 @@ class RegleMetierListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         regle = serializer.save()
+        tracer_action(request, 'CREATE', f'ia/regle/{regle.id}', details={
+            'nom'    : regle.nom,
+            'domaine': regle.domaine,
+        })
         return Response(
             RegleMetierSerializer(regle).data,
             status=status.HTTP_201_CREATED
@@ -134,11 +145,18 @@ class RegleMetierDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         serializer.save()
+        tracer_action(request, 'UPDATE', f'ia/regle/{pk}', details=request.data)
         return Response(RegleMetierSerializer(regle).data)
 
     def delete(self, request, pk):
         regle = get_object_or_404(RegleMetier, pk=pk)
+        nom_regle = regle.nom
+        domaine_regle = regle.domaine
         regle.delete()
+        tracer_action(request, 'DELETE', f'ia/regle/{pk}', details={
+            'nom'    : nom_regle,
+            'domaine': domaine_regle,
+        })
         return Response(
             {'message': 'Règle supprimée.'},
             status=status.HTTP_204_NO_CONTENT

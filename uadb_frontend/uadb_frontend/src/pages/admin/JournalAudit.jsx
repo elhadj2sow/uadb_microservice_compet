@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import api, { BASE } from '../../config/api'
-import { Search, Eye, Shield } from 'lucide-react'
+import { Eye, Shield, Download } from 'lucide-react'
 
 const NIVEAUX = { INFO:'info', WARNING:'warning', ERROR:'danger', CRITICAL:'danger' }
 const STATUTS = { succes:'success', echec:'danger', partiel:'warning' }
@@ -25,6 +25,27 @@ export default function JournalAudit() {
     } finally { setLoading(false) }
   }
 
+  const exporterCSV = async () => {
+    try {
+      const params = new URLSearchParams({ limit: 10000 })
+      Object.entries(filters).forEach(([k,v]) => v && params.append(k, v))
+      const r = await api.get(`${BASE.audit}/journal/?${params}`)
+      const rows = r.data.results || []
+      const cols = ['id','date_action','action','acteur','role_acteur','service','niveau','statut','ressource','adresse_ip','methode_http','url','description']
+      const escape = v => `"${String(v ?? '').replace(/"/g,'""')}"`
+      const csv = [cols.join(','), ...rows.map(row => cols.map(c => escape(row[c])).join(','))].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url
+      a.download = `journal_audit_${new Date().toISOString().slice(0,10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Erreur lors de l\'export.')
+    }
+  }
+
   useEffect(() => { charger() }, [offset, filters])
 
   const setFilter = (k, v) => { setFilters(f=>({...f,[k]:v})); setOffset(0) }
@@ -39,6 +60,9 @@ export default function JournalAudit() {
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <Shield size={16} style={{color:'var(--blue)'}}/>
           <span style={{fontSize:13,color:'var(--gray-400)'}}>Lecture seule</span>
+          <button className="btn btn-secondary btn-sm" onClick={exporterCSV} title="Exporter en CSV" style={{marginLeft:8}}>
+            <Download size={14}/> Exporter CSV
+          </button>
         </div>
       </div>
 

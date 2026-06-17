@@ -55,6 +55,23 @@ class LoginView(TokenObtainPairView):
                 )
             except Exception:
                 pass
+        else:
+            # Tracer la tentative de connexion échouée
+            try:
+                tracer_action(
+                    request,
+                    action      = 'LOGIN_ECHEC',
+                    ressource   = 'auth/login',
+                    utilisateur = None,
+                    details     = {
+                        'username'   : request.data.get('username', ''),
+                        'statut_http': response.status_code,
+                    },
+                    statut      = 'echec',
+                    niveau      = 'WARNING',
+                )
+            except Exception:
+                pass
         return response
 
 

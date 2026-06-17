@@ -20,6 +20,7 @@ from .permissions import (
 )
 from .services import AttestationService
 from .storage import generer_url_telechargement
+from .utils import tracer_action
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,10 @@ class SoumettreDemandeView(APIView):
                 annee_universitaire = annee,
                 motif               = serializer.validated_data.get('motif', ''),
             )
+            tracer_action(request, 'SUBMIT', f'attestation/demande/{demande.id}', details={
+                'type_attestation'  : type_att,
+                'annee_universitaire': annee,
+            })
 
         # Lancer le pipeline automatique
         service     = AttestationService()
@@ -135,6 +140,11 @@ class SoumettreDemandeView(APIView):
         demande.refresh_from_db()
 
         if attestation:
+            tracer_action(request, 'GENERATE', f'attestation/{attestation.id}', details={
+                'type_attestation': type_att,
+                'numero_ordre'    : attestation.numero_ordre,
+                'demande_id'      : demande.id,
+            })
             return Response(
                 {
                     'message'       : (
@@ -250,6 +260,11 @@ class TelechargerAttestationView(APIView):
             attestation.date_retrait       = timezone.now()
             attestation.save()
 
+        tracer_action(request, 'DOWNLOAD', f'attestation/{pk}', details={
+            'type_attestation': attestation.type_attestation,
+            'numero_ordre'    : attestation.numero_ordre,
+        })
+
         return Response({
             'url'        : url,
             'numero'     : attestation.numero_ordre,
@@ -288,6 +303,11 @@ class RegenererAttestationView(APIView):
             authorization_header=request.headers.get('Authorization')
         )
         if attestation:
+            tracer_action(request, 'GENERATE', f'attestation/demande/{pk}', details={
+                'numero_ordre': attestation.numero_ordre,
+                'type_attestation': demande.type_attestation,
+                'source': 'regeneration',
+            })
             return Response({
                 'message'   : 'Attestation regénérée.',
                 'numero'    : attestation.numero_ordre,

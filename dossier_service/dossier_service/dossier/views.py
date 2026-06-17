@@ -27,6 +27,7 @@ from .storage import (
     uploader_fichier, supprimer_fichier,
     generer_url_telechargement,
 )
+from .utils import tracer_action
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,10 @@ class FormationCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         formation = serializer.save()
+        tracer_action(request, 'CREATE', f'formation/{formation.id}', details={
+            'libelle': formation.libelle,
+            'niveau' : getattr(formation, 'niveau', None),
+        })
         return Response(
             FormationSerializer(formation).data,
             status=status.HTTP_201_CREATED
@@ -165,7 +170,50 @@ class FormationCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         serializer.save()
+        tracer_action(request, 'UPDATE', f'formation/{pk}', details=request.data)
         return Response(serializer.data)
+
+
+class UECreateView(APIView):
+    """
+    POST /api/formations/{pk}/ues/creer/
+    Crée une UE pour une formation donnée. Réservé à l'admin.
+    """
+    permission_classes = [IsAuthenticated, EstAdmin]
+
+    def post(self, request, pk):
+        formation = get_object_or_404(Formation, pk=pk)
+        data = request.data.copy()
+        serializer = UniteEnseignementSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save(formation=formation)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class UEDetailView(APIView):
+    """
+    PATCH /api/formations/{pk}/ues/{ue_pk}/modifier/
+    DELETE /api/formations/{pk}/ues/{ue_pk}/supprimer/
+    Réservé à l'admin.
+    """
+    permission_classes = [IsAuthenticated, EstAdmin]
+
+    def get_ue(self, pk, ue_pk):
+        return get_object_or_404(UniteEnseignement, pk=ue_pk, formation_id=pk)
+
+    def patch(self, request, pk, ue_pk):
+        ue = self.get_ue(pk, ue_pk)
+        serializer = UniteEnseignementSerializer(ue, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk, ue_pk):
+        ue = self.get_ue(pk, ue_pk)
+        ue.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class UniteEnseignementListView(APIView):
@@ -228,6 +276,10 @@ class CreerDossierView(APIView):
             f"Dossier créé — étudiant {request.user.etudiant_id} "
             f"— formation {dossier.formation_id}"
         )
+        tracer_action(request, 'CREATE', f'dossier/{dossier.id}', details={
+            'formation_id'       : dossier.formation_id,
+            'annee_universitaire': dossier.annee_universitaire,
+        })
         return Response(
             DossierEtudiantSerializer(dossier).data,
             status=status.HTTP_201_CREATED
@@ -368,6 +420,17 @@ class DossierDetailView(APIView):
         if etat == 'valide':
             _creer_inscription_automatique(dossier)
 
+        tracer_action(
+            request,
+            'VALIDATE' if etat == 'valide' else 'REJECT',
+            f'dossier/{pk}',
+            details={
+                'ancien_etat' : ancien_etat,
+                'nouvel_etat' : etat,
+                'observation' : dossier.observation,
+            }
+        )
+
         logger.info(
             f"Dossier {pk} : {ancien_etat} → {etat} "
             f"par agent {request.user.id}"
@@ -477,6 +540,12 @@ class DeposerPieceView(APIView):
         )
         # → signal recalculer_completude() déclenché automatiquement
 
+        tracer_action(request, 'UPLOAD', f'dossier/{pk}/piece/{piece.id}', details={
+            'type_piece'    : type_piece,
+            'nom_fichier'   : fichier.name,
+            'est_obligatoire': est_obligatoire,
+        })
+
         logger.info(
             f"Pièce déposée — dossier {pk} — "
             f"type : {type_piece} — chemin : {chemin}"
@@ -553,6 +622,17 @@ class VerifierPieceView(APIView):
         piece.save()
         # → signal recalculer_completude() déclenché automatiquement
 
+        tracer_action(
+            request,
+            'VALIDATE' if action == 'valider' else 'REJECT',
+            f'piece/{pk}',
+            details={
+                'ancien_statut': ancien_statut,
+                'type_piece'   : piece.type_piece,
+                'motif_rejet'  : motif_rejet,
+            }
+        )
+
         logger.info(
             f"Pièce {pk} : {ancien_statut} → "
             f"{piece.statut_verification} "
@@ -592,6 +672,11 @@ class TelechargerPieceView(APIView):
                 {'error': 'Impossible de générer l\'URL de téléchargement.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        tracer_action(request, 'DOWNLOAD', f'piece/{pk}', details={
+            'nom_fichier' : piece.nom_fichier,
+            'type_piece'  : piece.type_piece,
+            'dossier_id'  : piece.dossier_id,
+        })
         return Response({
             'url'         : url,
             'nom_fichier' : piece.nom_fichier,
@@ -625,8 +710,16 @@ class SupprimerPieceView(APIView):
             )
 
         # Supprimer de MinIO
+        dossier_id = piece.dossier_id
+        piece_id   = piece.id
+        type_piece = piece.type_piece
         supprimer_fichier(piece.chemin_stockage)
         piece.delete()
+
+        tracer_action(request, 'DELETE', f'piece/{piece_id}', details={
+            'dossier_id': dossier_id,
+            'type_piece': type_piece,
+        })
 
         return Response(
             {'message': 'Pièce supprimée avec succès.'},

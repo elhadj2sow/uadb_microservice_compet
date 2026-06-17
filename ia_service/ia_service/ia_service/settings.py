@@ -106,3 +106,7 @@ SERVICE_NOTIFICATION = config('SERVICE_NOTIFICATION', default='http://localhost:
 
 SERVICE_INTERNAL_USER     = config('SERVICE_INTERNAL_USER',     default='service_ia')
 SERVICE_INTERNAL_PASSWORD = config('SERVICE_INTERNAL_PASSWORD', default='secret')
+
+# -- Service audit centralise ------------------------------------------
+AUDIT_SERVICE_URL      = config('AUDIT_SERVICE_URL',      default='http://localhost:8008')
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')

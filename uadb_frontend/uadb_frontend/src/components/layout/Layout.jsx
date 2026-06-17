@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, FolderOpen, ClipboardList, BookOpen,
   FileText, Bell, LogOut, Settings, Users, Shield,
-  FileCheck, ChevronRight, BookMarked, BarChart2, Sliders
+  FileCheck, ChevronRight, BookMarked, BarChart2, Sliders, GraduationCap
 } from 'lucide-react'
 import Chatbot from '../ui/Chatbot'
 import api, { BASE } from '../../config/api'
@@ -25,9 +25,12 @@ const NAV = {
     { label: 'Bibliothèque',    icon: BookMarked,      to: '/agent/bibliotheque' },
   ],
   admin: [
-    { label: 'Tableau de bord', icon: LayoutDashboard, to: '/admin' },
-    { label: 'Règles IA',       icon: Sliders,         to: '/admin/regles' },
-    { label: 'Journal d\'audit',icon: Shield,          to: '/admin/audit' },
+    { label: 'Tableau de bord',     icon: LayoutDashboard, to: '/admin' },
+    { label: 'Utilisateurs',        icon: Users,           to: '/admin/utilisateurs' },
+    { label: 'Formations & UE',     icon: GraduationCap,   to: '/admin/formations' },
+    { label: 'Règles IA',           icon: Sliders,         to: '/admin/regles' },
+    { label: 'Notifications',       icon: Bell,            to: '/admin/notifications' },
+    { label: 'Journal d\'audit',    icon: Shield,          to: '/admin/audit' },
   ],
   pedagogue: [
     { label: 'Tableau de bord', icon: LayoutDashboard, to: '/pedagogue' },

@@ -31,6 +31,7 @@ from .permissions import (
     EstAgentOuAdmin, EstAdmin,
 )
 from .signals import auto_valider_comptabilite_si_paiement_confirme
+from .utils import tracer_action
 
 logger = logging.getLogger(__name__)
 
@@ -462,6 +463,12 @@ class PreinscriptionView(APIView):
 
         inscription = serializer.save(**save_kwargs)
 
+        tracer_action(request, 'SUBMIT', f'inscription/{inscription.id}', details={
+            'formation_id'       : inscription.formation_id,
+            'annee_universitaire': inscription.annee_universitaire,
+            'type_inscription'   : type_inscription,
+        })
+
         payload = InscriptionSerializer(inscription).data
         if decision_message:
             payload['message_condition'] = decision_message
@@ -539,6 +546,14 @@ class AutoCreateInscriptionView(APIView):
             type_inscription=type_inscription,
             dossier_id=dossier_id,
         )
+
+        tracer_action(request, 'CREATE', f'inscription/{inscription.id}', details={
+            'etudiant_id'        : etudiant_id,
+            'formation_id'       : formation_id,
+            'annee_universitaire': annee,
+            'type_inscription'   : type_inscription,
+            'source'             : 'auto_create',
+        })
 
         return Response(
             {
@@ -851,6 +866,17 @@ class ValiderEtapeView(APIView):
         vs.save()
         # → signal passer_etape_suivante() déclenché automatiquement
 
+        tracer_action(
+            request,
+            'VALIDATE' if action == 'valider' else 'REJECT',
+            f'inscription/{inscription.id}/etape/{type_service}',
+            details={
+                'service'    : type_service,
+                'action'     : action,
+                'observation': observation,
+            }
+        )
+
         # Recharger l'inscription
         inscription.refresh_from_db()
         return Response({
@@ -1011,6 +1037,12 @@ class PaiementView(APIView):
         paiement.confirme_par      = None
         paiement.save()
 
+        tracer_action(request, 'SUBMIT', f'inscription/{pk}/paiement', details={
+            'mode_paiement' : paiement.mode_paiement,
+            'montant_paye'  : str(paiement.montant_paye),
+            'montant_attendu': str(montant_attendu),
+        })
+
         return Response({
             'message' : 'Preuve de paiement soumise. En attente de validation comptable.',
             'montant_attendu': f"{montant_attendu:.2f}",
@@ -1063,6 +1095,12 @@ class PaiementView(APIView):
         paiement.date_confirmation = timezone.now()
         paiement.confirme_par      = request.user.id
         paiement.save()
+
+        tracer_action(request, 'VALIDATE', f'inscription/{pk}/paiement', details={
+            'statut_paiement': paiement.statut_paiement,
+            'montant_paye'   : str(paiement.montant_paye),
+            'mode_paiement'  : paiement.mode_paiement,
+        })
 
         return Response({
             'message' : 'Paiement enregistre et traite par la comptabilite.',
@@ -1380,6 +1418,13 @@ class PayTechConfirmerSuccessView(APIView):
         # Déclencher la validation comptabilité comme le fait le webhook
         auto_valider_comptabilite_si_paiement_confirme(paiement.inscription_id)
 
+        tracer_action(request, 'VALIDATE', f'inscription/{paiement.inscription_id}/paiement', details={
+            'paytech_ref'  : paiement.reference_paiement,
+            'montant_paye' : str(paiement.montant_paye),
+            'mode_paiement': paiement.mode_paiement,
+            'source'       : 'paytech_success_redirect',
+        })
+
         logger.info(
             f"Paiement {paiement.reference_paiement} confirmé via success_url redirect "
             f"(inscription {paiement.inscription_id})"
@@ -1575,6 +1620,11 @@ class ReinscriptionView(APIView):
             dossier_id=dossier_id,
             observation=decision_message if decision_message else '',
         )
+        tracer_action(request, 'CREATE', f'inscription/{inscription.id}', details={
+            'type_inscription'  : 'reinscription',
+            'annee_universitaire': annee_cible,
+            'formation_id'      : formation_id,
+        })
 
         payload = InscriptionSerializer(inscription).data
         payload['etapes_suivantes'] = [
@@ -1661,6 +1711,10 @@ class EmpruntLivreListView(APIView):
         if not s.is_valid():
             return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
         emprunt = s.save(enregistre_par=request.user.id)
+        tracer_action(request, 'CREATE', f'emprunt/{emprunt.id}', details={
+            'etudiant_id': emprunt.etudiant_id,
+            'isbn'       : getattr(emprunt, 'isbn', None),
+        })
         return Response(EmpruntLivreSerializer(emprunt).data, status=status.HTTP_201_CREATED)
 
 
@@ -1691,6 +1745,10 @@ class EmpruntLivreDetailView(APIView):
         if emprunt.statut == 'rendu' and not emprunt.date_retour_effective:
             emprunt.date_retour_effective = timezone.now().date()
             emprunt.save(update_fields=['date_retour_effective'])
+        tracer_action(request, 'UPDATE', f'emprunt/{pk}', details={
+            'statut': emprunt.statut,
+            'etudiant_id': emprunt.etudiant_id,
+        })
         return Response(EmpruntLivreSerializer(emprunt).data)
 
 
@@ -1722,6 +1780,10 @@ class PenaliteListView(APIView):
         if not s.is_valid():
             return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
         penalite = s.save(enregistre_par=request.user.id)
+        tracer_action(request, 'CREATE', f'penalite/{penalite.id}', details={
+            'etudiant_id': penalite.etudiant_id,
+            'motif'      : getattr(penalite, 'motif', None),
+        })
         return Response(PenaliteBibliothequeSerializer(penalite).data, status=status.HTTP_201_CREATED)
 
 
@@ -1751,4 +1813,8 @@ class PenaliteDetailView(APIView):
         if penalite.statut == 'payee' and not penalite.date_paiement:
             penalite.date_paiement = timezone.now()
             penalite.save(update_fields=['date_paiement'])
+        tracer_action(request, 'UPDATE', f'penalite/{pk}', details={
+            'statut'     : penalite.statut,
+            'etudiant_id': penalite.etudiant_id,
+        })
         return Response(PenaliteBibliothequeSerializer(penalite).data)

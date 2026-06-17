@@ -127,3 +127,7 @@ ALLOWED_MIME_TYPES = [
     'image/png',
     'image/jpg',
 ]
+
+# -- Service audit centralise ------------------------------------------
+AUDIT_SERVICE_URL      = config('AUDIT_SERVICE_URL',      default='http://localhost:8008')
+INTERNAL_SERVICE_TOKEN = config('INTERNAL_SERVICE_TOKEN', default='')
