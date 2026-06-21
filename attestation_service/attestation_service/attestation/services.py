@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 from django.conf import settings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import DemandeAttestation, Attestation
 from .storage import stocker_pdf, stocker_image, generer_url_telechargement
@@ -44,16 +45,26 @@ class AttestationService:
             f"type {demande.type_attestation}"
         )
 
-        # ── 1. Collecter les données inter-services ───────
+        # ── 1. Collecter les données inter-services EN PARALLÈLE ──
         annee = demande.annee_universitaire
-        inscription   = get_inscription_etudiant(
-            demande.etudiant_id, annee, authorization_header
-        )
-        deliberation  = get_resultat_deliberation(
-            demande.etudiant_id, annee, authorization_header
-        )
-        profil        = get_profil_etudiant(demande.etudiant_id)
-        formation     = get_formation_detail(
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_inscription  = executor.submit(
+                get_inscription_etudiant,
+                demande.etudiant_id, annee, authorization_header
+            )
+            f_deliberation = executor.submit(
+                get_resultat_deliberation,
+                demande.etudiant_id, annee, authorization_header
+            )
+            f_profil       = executor.submit(
+                get_profil_etudiant,
+                demande.etudiant_id
+            )
+            inscription  = f_inscription.result()
+            deliberation = f_deliberation.result()
+            profil       = f_profil.result()
+
+        formation = get_formation_detail(
             inscription.get('formation_id') if inscription else None
         )
 

@@ -52,8 +52,8 @@ export default function RegisterPage() {
 
     if (!form.email.trim())
       errs.email = 'L\'adresse email est requise.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      errs.email = 'Adresse email invalide.'
+    else if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.(com|fr|sn)$/.test(form.email))
+      errs.email = 'Seules les adresses en .com, .fr ou .sn sont acceptées.'
 
     if (!form.password)
       errs.password = 'Le mot de passe est requis.'

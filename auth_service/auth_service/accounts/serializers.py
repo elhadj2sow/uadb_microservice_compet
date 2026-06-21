@@ -30,6 +30,17 @@ class CustomTokenSerializer(TokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
+        # Si l'identifiant ressemble à un email, on cherche le username correspondant
+        identifiant = attrs.get('username', '')
+        if '@' in identifiant:
+            try:
+                user_obj = Utilisateur.objects.get(email__iexact=identifiant)
+                attrs['username'] = user_obj.username
+            except Utilisateur.DoesNotExist:
+                raise serializers.ValidationError(
+                    'Aucun compte trouvé avec cette adresse email.'
+                )
+
         # Vérifier que le compte n'est pas bloqué
         data = super().validate(attrs)
         user = self.user

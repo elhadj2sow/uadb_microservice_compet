@@ -28,6 +28,28 @@ export default function GestionDossiers() {
   const [search,   setSearch]   = useState('')
   const [selected, setSelected] = useState(null)
   const [action,   setAction]   = useState({ obs:'', etat:'' })
+  // Modal rejet pièce
+  const [rejetPiece,    setRejetPiece]    = useState(null)  // piece en cours de rejet
+  const [motifRejet,    setMotifRejet]    = useState('')
+  const [rejetLoading,  setRejetLoading]  = useState(false)
+
+  const confirmerRejetPiece = async () => {
+    if (!rejetPiece) return
+    setRejetLoading(true)
+    try {
+      await api.patch(`${BASE.piece}/${rejetPiece.id}/verifier/`, {
+        action: 'rejeter',
+        motif_rejet: motifRejet,
+      })
+      toast.success('Pièce rejetée !')
+      const r = await api.get(`${BASE.dossier}/${selected.id}/`)
+      setSelected({ ...r.data, etudiant_nom: selected.etudiant_nom })
+      setRejetPiece(null)
+      setMotifRejet('')
+    } catch { toast.error('Erreur lors du rejet de la pièce.') }
+    finally { setRejetLoading(false) }
+  }
+
   // Pour la validation d'étape d'inscription
   const [showValiderEtape, setShowValiderEtape] = useState(false)
   const [validerEtapeObs, setValiderEtapeObs] = useState('')
@@ -364,15 +386,9 @@ export default function GestionDossiers() {
                           {piece.statut_verification !== 'rejete' && (
                             <button
                               className="btn btn-sm"
+                              title="Rejeter cette pièce"
                               style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)',padding:'3px 8px'}}
-                              onClick={async()=>{
-                                try {
-                                  await api.patch(`${BASE.piece}/${piece.id}/verifier/`, { action: 'rejeter', motif_rejet: '' });
-                                  toast.success('Pièce rejetée !');
-                                  const r = await api.get(`${BASE.dossier}/${selected.id}/`);
-                                  setSelected({...r.data, etudiant_nom: selected.etudiant_nom});
-                                } catch { toast.error('Erreur rejet pièce'); }
-                              }}>
+                              onClick={() => { setRejetPiece(piece); setMotifRejet('') }}>
                               <XCircle size={12}/>
                             </button>
                           )}
@@ -409,6 +425,43 @@ export default function GestionDossiers() {
                   <XCircle size={14}/> Confirmer le rejet
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal rejet pièce — motif */}
+      {rejetPiece && (
+        <div className="modal-overlay" onClick={() => { setRejetPiece(null); setMotifRejet('') }}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Rejeter la pièce</span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setRejetPiece(null); setMotifRejet('') }}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{fontSize:13,color:'var(--gray-600)',marginBottom:14}}>
+                Vous allez rejeter : <strong>{pieceLabel(rejetPiece.type_piece)}</strong>
+              </p>
+              <div className="form-group">
+                <label className="form-label">Motif du rejet <span style={{color:'var(--danger)'}}>*</span></label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  value={motifRejet}
+                  onChange={e => setMotifRejet(e.target.value)}
+                  placeholder="Ex : Document illisible, photo non conforme..."
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => { setRejetPiece(null); setMotifRejet('') }}>Annuler</button>
+              <button
+                className="btn btn-danger"
+                disabled={!motifRejet.trim() || rejetLoading}
+                onClick={confirmerRejetPiece}
+              >
+                <XCircle size={14}/> {rejetLoading ? 'En cours...' : 'Confirmer le rejet'}
+              </button>
             </div>
           </div>
         </div>

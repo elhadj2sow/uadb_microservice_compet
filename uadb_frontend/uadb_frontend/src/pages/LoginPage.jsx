@@ -81,7 +81,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label">Identifiant</label>
+              <label className="form-label">Identifiant ou email</label>
               <input
                 className="form-control"
                 placeholder="Nom d'utilisateur ou email"

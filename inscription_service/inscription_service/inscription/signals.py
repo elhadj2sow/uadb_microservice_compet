@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.conf import settings
 import requests
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -44,42 +45,41 @@ def get_auth_header():
     return {'Authorization': f'Bearer {token}'} if token else {}
 
 
+def _envoyer_notification(payload):
+    """Envoie une notification de façon non-bloquante (thread séparé)."""
+    def _send():
+        try:
+            requests.post(
+                f"{settings.SERVICE_NOTIFICATION}/api/notifications/",
+                json=payload,
+                headers=get_auth_header(),
+                timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"Notification échouée : {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+
 def notifier_service(type_service, inscription_id, etudiant_id=None):
-    """Notifie le service concerné que c'est son tour."""
-    try:
-        requests.post(
-            f"{settings.SERVICE_NOTIFICATION}/api/notifications/",
-            json={
-                'service'       : type_service,
-                'inscription_id': inscription_id,
-                'canal'         : 'interne',
-                'message'       : (
-                    f"Un dossier d'inscription (ID:{inscription_id}) "
-                    f"attend votre validation."
-                ),
-            },
-            headers=get_auth_header(),
-            timeout=5
-        )
-    except Exception as e:
-        logger.warning(f"Notification service {type_service} échouée : {e}")
+    """Notifie le service concerné que c'est son tour (non-bloquant)."""
+    _envoyer_notification({
+        'service'       : type_service,
+        'inscription_id': inscription_id,
+        'canal'         : 'interne',
+        'message'       : (
+            f"Un dossier d'inscription (ID:{inscription_id}) "
+            f"attend votre validation."
+        ),
+    })
 
 
 def notifier_etudiant(etudiant_id, message, canal='email'):
-    """Notifie l'étudiant via le service notification."""
-    try:
-        requests.post(
-            f"{settings.SERVICE_NOTIFICATION}/api/notifications/",
-            json={
-                'etudiant_id': etudiant_id,
-                'canal'      : canal,
-                'message'    : message,
-            },
-            headers=get_auth_header(),
-            timeout=5
-        )
-    except Exception as e:
-        logger.warning(f"Notification étudiant {etudiant_id} échouée : {e}")
+    """Notifie l'étudiant via le service notification (non-bloquant)."""
+    _envoyer_notification({
+        'etudiant_id': etudiant_id,
+        'canal'      : canal,
+        'message'    : message,
+    })
 
 
 def auto_valider_comptabilite_si_paiement_confirme(inscription_id):
@@ -222,6 +222,17 @@ def passer_etape_suivante(sender, instance, **kwargs):
             statut_inscription='rejetee'
         )
 
+        # Notifier l'étudiant du rejet
+        insc = Inscription.objects.filter(pk=wf.inscription_id).first()
+        if insc:
+            nom_etape = NOMS_ETAPES.get(instance.type_service, instance.type_service)
+            raison = f" Motif : {instance.observation}" if instance.observation else ""
+            notifier_etudiant(
+                insc.etudiant_id,
+                f"Votre inscription a été rejetée à l'étape « {nom_etape} ».{raison} "
+                f"Veuillez contacter l'administration pour régulariser votre situation."
+            )
+
         logger.info(
             f"Inscription {wf.inscription_id} rejetée "
             f"par {instance.type_service}"
@@ -248,6 +259,21 @@ def passer_etape_suivante(sender, instance, **kwargs):
         wf.etape_courante = etape_suivante.ordre
         wf.save()
 
+        # Notifier l'étudiant de la progression (avant toute auto-validation)
+        insc = Inscription.objects.filter(pk=wf.inscription_id).first()
+        if insc:
+            nom_etape_validee  = NOMS_ETAPES.get(instance.type_service, instance.type_service)
+            nom_etape_suivante = NOMS_ETAPES.get(
+                etape_suivante.validation_service.type_service,
+                etape_suivante.validation_service.type_service
+            )
+            notifier_etudiant(
+                insc.etudiant_id,
+                f"Étape « {nom_etape_validee} » validée avec succès "
+                f"(étape {etape.ordre}/4). "
+                f"Votre dossier passe maintenant à l'étape « {nom_etape_suivante} »."
+            )
+
         # Si la comptabilité devient active et que le paiement est déjà
         # confirmé, valider automatiquement l'étape pour poursuivre le workflow.
         if etape_suivante.validation_service.type_service == 'comptabilite':
@@ -270,6 +296,15 @@ def passer_etape_suivante(sender, instance, **kwargs):
             f"passage à l'étape {etape_suivante.ordre}"
         )
     else:
+        # Dernière étape validée — notifier avant de finaliser
+        insc = Inscription.objects.filter(pk=wf.inscription_id).first()
+        if insc:
+            nom_etape_validee = NOMS_ETAPES.get(instance.type_service, instance.type_service)
+            notifier_etudiant(
+                insc.etudiant_id,
+                f"Étape « {nom_etape_validee} » validée avec succès "
+                f"(étape {etape.ordre}/4). Toutes les étapes sont complètes !"
+            )
         # Toutes les étapes validées → finaliser
         finaliser_inscription(wf)
 

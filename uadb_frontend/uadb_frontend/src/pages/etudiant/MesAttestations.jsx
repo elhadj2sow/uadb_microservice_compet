@@ -42,14 +42,22 @@ export default function MesAttestations() {
         type_attestation   : type,
         annee_universitaire: anneeSelectionnee,
       })
-      setDemandes(d => [r.data.demande, ...d])
-      if (r.data.demande.statut === 'generee') {
+      setDemandes(d => [r.data.demande, ...d.filter(x => x.id !== r.data.demande?.id)])
+      if (r.data.demande?.statut === 'generee') {
         toast.success('Attestation générée ! Vous pouvez la télécharger.')
-      } else if (r.data.demande.statut === 'refusee') {
+      } else if (r.data.demande?.statut === 'refusee') {
         toast.error(`Refusée : ${r.data.demande.motif_refus}`)
+      } else {
+        toast.success('Demande traitée.')
       }
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Erreur lors de la demande.')
+      // Même en cas d'erreur réseau, l'attestation a pu être générée côté serveur
+      toast.error(e.response?.data?.detail || 'Génération en cours, vérifiez la liste ci-dessous.')
+      // Recharger la liste pour voir si l'attestation a été créée
+      try {
+        const r2 = await api.get(`${BASE.attestation}/mes-demandes/`)
+        setDemandes(r2.data.results || [])
+      } catch {}
     } finally { setRequesting(null) }
   }
 

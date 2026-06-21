@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.conf import settings
 import requests
 import logging
+import threading
 
 from .models import (Formation, UniteEnseignement,
                      DossierEtudiant, PieceJustificative)
@@ -50,6 +51,68 @@ def _get_internal_token():
 def _auth_header():
     token = _get_internal_token()
     return {'Authorization': f'Bearer {token}'} if token else {}
+
+
+def _notifier_decision_dossier(dossier, etat, observation=''):
+    """Envoie une notification email à l'étudiant (non-bloquant)."""
+    if etat == 'valide':
+        message = (
+            "Bonne nouvelle ! Votre dossier d'inscription a été validé par l'administration. "
+            "Votre inscription est en cours de traitement."
+        )
+        sujet = "Dossier validé"
+    else:
+        raison = f" Motif : {observation}" if observation else ""
+        message = (
+            f"Votre dossier d'inscription a été rejeté par l'administration.{raison} "
+            "Veuillez corriger les éléments signalés et soumettre à nouveau."
+        )
+        sujet = "Dossier rejeté"
+    payload = {
+        'etudiant_id': dossier.etudiant_id,
+        'canal'      : 'email',
+        'sujet'      : sujet,
+        'message'    : message,
+    }
+    def _send():
+        try:
+            requests.post(
+                f"{settings.SERVICE_NOTIFICATION}/api/notifications/",
+                json=payload, headers=_auth_header(), timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"Notification décision dossier {dossier.id} échouée : {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def _notifier_decision_piece(piece, action, motif=''):
+    """Envoie une notification email à l'étudiant (non-bloquant)."""
+    libelle = piece.type_piece.replace('_', ' ').capitalize()
+    if action == 'valider':
+        message = f"Votre pièce « {libelle} » a été validée par l'agent de scolarité."
+        sujet   = f"Pièce validée : {libelle}"
+    else:
+        raison  = f" Motif : {motif}" if motif else ""
+        message = (
+            f"Votre pièce « {libelle} » a été rejetée.{raison} "
+            "Veuillez déposer une nouvelle version dans votre espace."
+        )
+        sujet = f"Pièce rejetée : {libelle}"
+    payload = {
+        'etudiant_id': piece.dossier.etudiant_id,
+        'canal'      : 'email',
+        'sujet'      : sujet,
+        'message'    : message,
+    }
+    def _send():
+        try:
+            requests.post(
+                f"{settings.SERVICE_NOTIFICATION}/api/notifications/",
+                json=payload, headers=_auth_header(), timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"Notification décision pièce {piece.id} échouée : {e}")
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def _creer_inscription_automatique(dossier):
@@ -431,6 +494,8 @@ class DossierDetailView(APIView):
             }
         )
 
+        _notifier_decision_dossier(dossier, etat, dossier.observation)
+
         logger.info(
             f"Dossier {pk} : {ancien_etat} → {etat} "
             f"par agent {request.user.id}"
@@ -632,6 +697,8 @@ class VerifierPieceView(APIView):
                 'motif_rejet'  : motif_rejet,
             }
         )
+
+        _notifier_decision_piece(piece, action, motif_rejet)
 
         logger.info(
             f"Pièce {pk} : {ancien_statut} → "

@@ -50,13 +50,19 @@ export default function GestionInscriptions() {
     setValidating(true)
     try {
       await api.patch(`${BASE.inscription}/${inscriptionId}/valider-etape/`, {
-        etape_id: etapeId, action, observation
+        action, observation
       })
       toast.success(`Étape ${action === 'valider' ? 'validée' : 'rejetée'} !`)
+      // Recharger les données fraîches de l'inscription dans la modal (sans fermer)
+      const r = await api.get(`${BASE.inscription}/${inscriptionId}/`)
+      setSelected(prev => prev ? { ...prev, ...r.data } : null)
       charger()
-      setSelected(null)
     } catch (e) {
-      toast.error(e.response?.data?.error || e.response?.data?.detail || e.response?.data?.non_field_errors?.[0] || 'Erreur lors de la validation.')
+      const msg = e.response?.data?.error
+        || e.response?.data?.detail
+        || e.response?.data?.non_field_errors?.[0]
+        || 'Erreur lors de la validation.'
+      toast.error(msg)
     } finally { setValidating(false); setEtapeAction(null); setObservation("") }
   }
 
