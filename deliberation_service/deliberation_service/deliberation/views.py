@@ -311,6 +311,13 @@ class PVDeliberationView(APIView):
             f"{deliberation.annee_universitaire}_"
             f"{deliberation.session}.pdf"
         )
+        tracer_action(request, 'GENERATE', f'deliberation/{pk}/pv', details={
+            'nom_fichier'       : nom_fichier,
+            'semestre'          : deliberation.semestre,
+            'annee_universitaire': deliberation.annee_universitaire,
+            'session'           : deliberation.session,
+            'nb_resultats'      : deliberation.resultats.count(),
+        })
         response = HttpResponse(
             buffer.read(),
             content_type='application/pdf'

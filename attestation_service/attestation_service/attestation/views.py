@@ -437,6 +437,11 @@ class DemandeDetailAdminView(APIView):
             demande.refresh_from_db()
             demande.traite_par = request.user.id
             demande.save()
+            tracer_action(request, 'VALIDATE', f'attestation/demande/{pk}', details={
+                'action'     : 'approuver',
+                'etudiant_id': demande.etudiant_id,
+                'type'       : demande.type_attestation,
+            })
             return Response({
                 'message': 'Demande approuvée et attestation générée.',
                 'demande': DemandeAttestationSerializer(demande).data,
@@ -449,6 +454,12 @@ class DemandeDetailAdminView(APIView):
             demande.traite_par  = request.user.id
             demande.date_traitement = timezone.now()
             demande.save()
+            tracer_action(request, 'REJECT', f'attestation/demande/{pk}', details={
+                'action'     : 'refuser',
+                'motif'      : motif,
+                'etudiant_id': demande.etudiant_id,
+                'type'       : demande.type_attestation,
+            })
 
             from .utils import notifier_etudiant
             notifier_etudiant(

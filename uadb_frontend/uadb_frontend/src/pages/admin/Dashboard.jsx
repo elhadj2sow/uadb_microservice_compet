@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { Shield, Sliders, FileText, Users, TrendingUp, AlertTriangle } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
 
 const COLORS = ['#1565c0','#00897b','#f59e0b','#e53935','#7b1fa2']
@@ -99,23 +99,45 @@ export default function DashboardAdmin() {
             <span className="card-title">Répartition des dossiers</span>
           </div>
           <div className="card-body">
-            <div style={{height:220,display:'flex',alignItems:'center',justifyContent:'center'}}>
-              {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" outerRadius={80}
-                      dataKey="value" nameKey="name" label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`}
-                      labelLine={false}
-                      style={{fontSize:11}}>
-                      {pieData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-                    </Pie>
-                    <Tooltip contentStyle={{borderRadius:10,fontSize:12}}/>
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
+            {pieData.length > 0 ? (
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
+                <div style={{height:180,width:'100%'}}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%"
+                        innerRadius={52} outerRadius={80}
+                        dataKey="value" nameKey="name"
+                        paddingAngle={3}>
+                        {pieData.map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{borderRadius:10,fontSize:12,border:'1px solid var(--gray-200)'}}
+                        formatter={(value, name) => [value, name]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Légende personnalisée */}
+                <div style={{display:'flex',flexWrap:'wrap',justifyContent:'center',gap:'8px 20px'}}>
+                  {pieData.map((entry, i) => {
+                    const total = pieData.reduce((s,d)=>s+d.value,0)
+                    const pct   = total > 0 ? Math.round(entry.value/total*100) : 0
+                    return (
+                      <div key={entry.name} style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>
+                        <span style={{width:10,height:10,borderRadius:3,background:COLORS[i%COLORS.length],flexShrink:0}}/>
+                        <span style={{color:'var(--gray-600)',textTransform:'capitalize'}}>{entry.name}</span>
+                        <span style={{fontWeight:700,color:'var(--gray-800)'}}>{entry.value}</span>
+                        <span style={{color:'var(--gray-400)'}}>({pct}%)</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={{height:220,display:'flex',alignItems:'center',justifyContent:'center'}}>
                 <span style={{color:'var(--gray-300)',fontSize:14}}>Aucune donnée</span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

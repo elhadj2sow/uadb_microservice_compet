@@ -17,11 +17,12 @@ const CANAL_BADGE = {
 }
 
 export default function NotificationsAdmin() {
-  const [notifs,  setNotifs]  = useState([])
-  const [stats,   setStats]   = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [relance, setRelance] = useState(false)
-  const [msg,     setMsg]     = useState(null)
+  const [notifs,    setNotifs]   = useState([])
+  const [stats,     setStats]    = useState(null)
+  const [loading,   setLoading]  = useState(true)
+  const [relance,   setRelance]  = useState(false)
+  const [msg,       setMsg]      = useState(null)
+  const [usersMap,  setUsersMap] = useState({})
   const [filterStatut, setFilterStatut] = useState('')
   const [filterCanal,  setFilterCanal]  = useState('')
 
@@ -49,6 +50,18 @@ export default function NotificationsAdmin() {
   }, [filterStatut, filterCanal])
 
   useEffect(() => { charger() }, [charger])
+
+  useEffect(() => {
+    api.get(`${BASE.auth}/utilisateurs/`)
+      .then(r => {
+        const map = {}
+        ;(r.data.results || []).forEach(u => {
+          map[u.id] = u.nom_complet || u.username
+        })
+        setUsersMap(map)
+      })
+      .catch(() => {})
+  }, [])
 
   const relancerEchecs = async () => {
     setRelance(true)
@@ -169,7 +182,9 @@ export default function NotificationsAdmin() {
                     </td>
                     <td style={{ fontSize:'.85rem' }}>{n.type_notification || '—'}</td>
                     <td style={{ fontSize:'.85rem' }}>
-                      {n.etudiant_username || `#${n.etudiant_id}` || '—'}
+                      {n.etudiant_id
+                        ? (usersMap[n.etudiant_id] || `#${n.etudiant_id}`)
+                        : (n.service_destinataire || '—')}
                     </td>
                     <td>
                       <span className={`badge badge-${CANAL_BADGE[n.canal] || 'neutral'}`} style={{ fontSize:'.75rem' }}>

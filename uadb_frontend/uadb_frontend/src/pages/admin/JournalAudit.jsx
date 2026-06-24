@@ -71,7 +71,7 @@ export default function JournalAudit() {
         <div className="card-padded" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
           <select className="form-control" value={filters.action} onChange={e=>setFilter('action',e.target.value)}>
             <option value="">Toutes actions</option>
-            {['LOGIN','LOGOUT','LOGIN_ECHEC','CREATE','UPDATE','DELETE','VALIDATE','REJECT',
+            {['LOGIN','LOGOUT','LOGIN_ECHEC','CREATE','UPDATE','DELETE','SUBMIT','VALIDATE','REJECT',
               'UPLOAD','DOWNLOAD','GENERATE','DECISION_AUTO','ALERTE','WORKFLOW_START','WORKFLOW_END'].map(a=>
               <option key={a} value={a}>{a}</option>)}
           </select>
